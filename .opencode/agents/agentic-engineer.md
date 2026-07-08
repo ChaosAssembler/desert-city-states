@@ -6,10 +6,8 @@ permission:
     ".opencode/agents/*": allow
     "opencode.json": allow
     "opencode.jsonc": allow
-    "*": deny
   glob:
     ".opencode/": allow
-    "*": deny
   edit:
     ".opencode/agents/*": allow
     "opencode.json": allow
