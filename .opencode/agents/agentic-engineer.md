@@ -3,13 +3,15 @@ description: Maintains OpenCode agent configuration files
 mode: primary
 permission:
   read:
-    ".opencode/agents/**": allow
+    ".opencode/agents/*": allow
     "opencode.json": allow
   glob:
+    ".opencode/agents/**/*": allow
     ".opencode/agents/**": allow
+    ".opencode/agents/*": allow
     "opencode.json": allow
   edit:
-    ".opencode/agents/**": allow
+    ".opencode/agents/*": allow
     "opencode.json": allow
 ---
 
