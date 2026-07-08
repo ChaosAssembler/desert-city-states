@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "default_agent": "agentic-engineer",
+  "default_agent": "build",
   "permission": {
     "*": "deny",
     "skill": "allow",
@@ -10,8 +10,11 @@
     "plan": {
       "disable": true
     },
-    "build": {
+    "general": {
+      "disable": true
+    },
+    "explore": {
       "disable": true
     }
-  },
+  }
 }

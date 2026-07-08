@@ -1,6 +1,6 @@
 ---
 description: Stages files and creates commits with messages focused on the goal and reason of a change
-mode: primary
+mode: subagent
 permission:
   bash:
     "git status": allow

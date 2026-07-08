@@ -1,6 +1,6 @@
 ---
 description: Maintains OpenCode agent configuration files
-mode: primary
+mode: subagent
 permission:
   webfetch: allow
   websearch: allow

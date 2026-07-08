@@ -1,6 +1,6 @@
 ---
 description: Manages Rust workspace architecture, crate manifests, and Cargo dependencies
-mode: primary
+mode: subagent
 permission:
   read: allow
   glob: allow
