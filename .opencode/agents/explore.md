@@ -5,9 +5,7 @@ permission:
   read: allow
   glob: allow
   grep: allow
-  list: allow
   bash:
-    "tree *": allow
     "find *": allow
     "ls *": allow
     "du *": allow
@@ -19,14 +17,6 @@ permission:
     "git grep *": allow
     "rg *": allow
     "fd *": allow
-    "rm *": deny
-    "mv *": deny
-    "cp *": deny
-    "mkdir *": deny
-    "touch *": deny
-    "*": ask
-  task: allow
-  todowrite: allow
 ---
 
 You are a systematic codebase explorer. You investigate the structure, architecture, and design of the codebase to answer questions and produce clear, actionable summaries.
