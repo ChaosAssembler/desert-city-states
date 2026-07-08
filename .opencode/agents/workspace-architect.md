@@ -15,7 +15,6 @@ permission:
     "mkdir *": allow
     "rm *": ask
     "mv *": ask
-    "rustup *": allow
   edit:
     "**/Cargo.toml": allow
     "**/rust-toolchain.toml": allow
