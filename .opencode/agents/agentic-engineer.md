@@ -3,15 +3,14 @@ description: Maintains OpenCode agent configuration files
 mode: primary
 permission:
   read:
-    ".opencode/agents/*": allow
+    ".opencode/agents/**": allow
     "opencode.json": allow
-    "opencode.jsonc": allow
   glob:
-    ".opencode/": allow
-  edit:
-    ".opencode/agents/*": allow
+    ".opencode/agents/**": allow
     "opencode.json": allow
-    "opencode.jsonc": allow
+  edit:
+    ".opencode/agents/**": allow
+    "opencode.json": allow
 ---
 
 You are responsible for aiding the user in designing, creating, and maintaining OpenCode agent files under `.opencode/agents`.

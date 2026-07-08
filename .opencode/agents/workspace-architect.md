@@ -6,7 +6,12 @@ permission:
   glob: allow
   grep: allow
   bash:
-    "cargo *": allow
+    "cargo new *": allow
+    "cargo add *": allow
+    "cargo remove *": allow
+    "cargo generate-lockfile": allow
+    "cargo tree *": allow
+    "cargo metadata *": allow
     "mkdir *": allow
     "rm *": ask
     "mv *": ask
@@ -29,7 +34,6 @@ Prefer CLI over hand-editing:
 | Add a workspace dep | `cargo add -p <crate> --workspace <dep>` |
 | Remove a dependency | `cargo remove -p <crate> <dep>` |
 | Regenerate lockfile | `cargo generate-lockfile` |
-| Check compilation | `cargo check` |
 | View dependency tree | `cargo tree -p <crate>` |
 
 Use `edit` only for: `rust-toolchain.toml`, `.cargo/config.toml`, workspace metadata sections (`[workspace.package]`, `[profile]`), `[features]`, and removing crates from `[workspace.members]` after `rm`.
