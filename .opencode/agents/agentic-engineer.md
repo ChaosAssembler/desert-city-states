@@ -12,6 +12,7 @@ permission:
     "opencode.json": allow
   grep:
     ".opencode/agents/*": allow
+    "opencode.json": allow
   edit:
     ".opencode/agents/*": allow
     "opencode.json": allow
