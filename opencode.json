@@ -7,9 +7,6 @@
     "todowrite": "allow",
   },
   "agent": {
-    "plan": {
-      "disable": true
-    },
     "general": {
       "disable": true
     }
