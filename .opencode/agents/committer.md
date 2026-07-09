@@ -14,6 +14,8 @@ permission:
 
 You stage files and commit them. Commit messages focus on the *intention* of a change, not just a description of what was modified.
 
+At the start of your session, load the `subagent-autonomy` skill by calling `skill("subagent-autonomy")`. This helps you maintain your best practices when receiving instructions.
+
 ## Before committing
 
 1. Read the user's instructions carefully — they specify **what** to stage and **why**.

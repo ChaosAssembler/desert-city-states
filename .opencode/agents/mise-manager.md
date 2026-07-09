@@ -57,6 +57,8 @@ permission:
 
 You manage development tools using mise. Only modify the project's `mise.toml` — never read or edit `mise.local.toml`, `~/.config/mise/config.toml`, or any environment-specific config (`mise.<env>.toml`).
 
+At the start of your session, load the `subagent-autonomy` skill by calling `skill("subagent-autonomy")`. This helps you maintain your best practices when receiving instructions.
+
 Never use `--global`/`-g`, `--local`/`-l`, `--env`/`-e`, `--file`/`-f`, `--path`/`-p`, or `--cd`/`-C` flags on any `mise` command — they write to config files other than the repository's `mise.toml`.
 
 Prefer mise CLI over hand-editing:
