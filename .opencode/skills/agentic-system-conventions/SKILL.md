@@ -74,10 +74,20 @@ description: <"Use when..." phrasing>
 
 ## Architecture
 
-- **Orchestrators** (plan, build) delegate to specialists via the task tool. They do not modify files directly.
-- **Specialists** execute within their scoped domain. Each loads `subagent-autonomy` and its domain skill.
+- **Orchestrators** (plan, build) delegate broadly to specialists via the task tool. They do not modify files directly. They load `delegation-guide` and have unrestricted `task` permission.
+- **Specialists** execute within their scoped domain. Each loads `subagent-autonomy` and its domain skill. Most specialists do not delegate further.
+- **Delegating specialists** are specialists that also delegate one specific subtask to a dedicated sub-subagent. They have narrowly-scoped `task` permission (allowing only the specific agent they need) and load both `subagent-autonomy` and `delegation-guide`. This is not orchestration — it is limited delegation for a single capability the specialist does not own.
 - **Consultant** loads skills on demand to provide expert guidance on the correct approach. Orchestrators consult it frequently.
 - **Permissions** are deny-by-default with per-skill allow rules. Each agent only accesses the skills it needs.
+
+## Delegation Depth
+
+Delegation is bounded: an orchestrator may delegate freely, a delegating specialist may delegate one narrow subtask, and a regular specialist does not delegate at all. This keeps delegation chains short (maximum depth of 2) and traceable.
+
+Rules for delegating specialists:
+- The `task` permission must name the specific agent(s) allowed — never `task: allow` with an unrestricted allowlist.
+- The specialist's own domain skill must describe the delegation as part of its process (e.g., "delegate URL fetching to web-fetcher").
+- A delegating specialist still loads `subagent-autonomy` — it remains a specialist subject to autonomy principles, not an orchestrator.
 
 ## Voice Convention
 

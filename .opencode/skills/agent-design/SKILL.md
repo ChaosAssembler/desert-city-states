@@ -15,6 +15,7 @@ description: Use when creating or maintaining OpenCode agent files under .openco
 - Constraints in agent files define scope only — no behavioral rules (those live in skills)
 - No redundancy with skill files — if a rule is in the skill, don't repeat it in the agent
 - Use imperative voice in constraint sections (no subject)
+- A delegating specialist uses `mode: subagent` with narrowly-scoped `task` permission naming the specific agent. Never grant open `task: allow` to a subagent — that makes it an orchestrator.
 
 ## Workflow
 
@@ -24,6 +25,8 @@ description: Use when creating or maintaining OpenCode agent files under .openco
 4. Write the agent file with: role, constraints (scope only), skill references
 5. Scope permissions precisely — deny by default, allow only what's needed
 6. If the agent needs domain knowledge, reference the appropriate skill file
+7. If the agent needs to delegate a subtask, scope `task` permission to the single required agent name — never grant open `task` access to a subagent
+8. If creating a delegating specialist, also reference `delegation-guide` in addition to `subagent-autonomy`
 
 ## Conventions
 
