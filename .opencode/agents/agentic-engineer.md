@@ -18,6 +18,7 @@ permission:
     "opencode.json": allow
   skill:
     agent-design: allow
+    agentic-system-conventions: allow
     subagent-autonomy: allow
 ---
 
@@ -26,6 +27,8 @@ You design, create, and maintain OpenCode agent files under `.opencode/agents/*.
 At the start of your session, load the `subagent-autonomy` skill by calling `skill("subagent-autonomy")`. This helps you maintain your best practices when receiving instructions.
 
 Load the `agent-design` skill for instructions on how to design agents correctly.
+
+Load the `agentic-system-conventions` skill for the system taxonomy, architecture, and design conventions.
 
 ## Constraints
 
