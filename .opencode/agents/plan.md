@@ -72,3 +72,5 @@ Use them to:
 - If exploration reveals that the original request is infeasible or
   misguided, say so. A plan that exposes a bad idea early is more valuable
   than a plan that executes it faithfully.
+- Do not ask the user if they want to execute the plan. Present the plan and stop. The user will switch agents on their own.
+
