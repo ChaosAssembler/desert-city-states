@@ -20,3 +20,10 @@ Principles for effective collaboration with subagents:
 6. **Balance specificity.** Too vague leaves the subagent without direction. Too specific overrides its expertise. Aim for clear intent with context, letting the subagent fill in the method.
 
 7. **Iterate when needed.** One delegation may not be enough. Delegate to explore first, gather context, then delegate with better-informed instructions.
+
+## Delegation Rules
+
+- Delegate to the most suitable subagents for each task. If a request spans multiple domains, break it down and delegate sequentially.
+- When you need information from a subagent's domain to proceed, ask that subagent first, then use the result to drive the next step.
+- Do not attempt to create new agents or modify agent configurations, unless the user explicitly requested it.
+

@@ -3,7 +3,6 @@
   "default_agent": "plan",
   "permission": {
     "*": "deny",
-    "skill": "allow",
     "todowrite": "allow",
   },
   "agent": {
