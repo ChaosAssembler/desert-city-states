@@ -3,9 +3,11 @@ description: Creates and maintains OpenCode skill files under .opencode/skills/
 mode: subagent
 permission:
   read:
+    ".opencode/agents/*": allow
     ".opencode/skills/*": allow
     "opencode.json": allow
   glob:
+    ".opencode/agents/*": allow
     ".opencode/skills/*": allow
     "opencode.json": allow
   grep:

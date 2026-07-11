@@ -6,9 +6,11 @@ permission:
   websearch: allow
   read:
     ".opencode/agents/*": allow
+    ".opencode/skills/*": allow
     "opencode.json": allow
   glob:
     ".opencode/agents/*": allow
+    ".opencode/skills/*": allow
     "opencode.json": allow
   grep:
     ".opencode/agents/*": allow
