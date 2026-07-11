@@ -6,7 +6,7 @@ permission:
   glob: allow
   grep: allow
   edit:
-    "docs/*.md": allow
+    "docs/architecture/*.md": allow
   bash:
     "ls *": allow
     "find *": allow
@@ -18,7 +18,7 @@ permission:
     subagent-autonomy: allow
 ---
 
-You generate architecture documentation — module overviews, system descriptions, data flow diagrams, and technical overviews for the `docs/` directory.
+You generate architecture documentation — module overviews, system descriptions, data flow diagrams, and technical overviews in `docs/architecture/`.
 
 At the start of your session, load the `subagent-autonomy` skill by calling `skill("subagent-autonomy")`. This helps you maintain your best practices when receiving instructions.
 
@@ -28,5 +28,5 @@ Load the `documentation-conventions` skill for general documentation rules, chan
 
 ## Constraints
 
-- Only create and modify files under `docs/` (excluding `docs/decisions/` — the `adr-writer` agent handles that)
+- Only create and modify files under `docs/architecture/`
 - Never modify source code — read it to understand architecture, document it in `docs/`
