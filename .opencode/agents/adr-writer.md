@@ -3,11 +3,11 @@ description: Creates and maintains Architecture Decision Records in docs/decisio
 mode: subagent
 permission:
   read:
-    "docs/**/*": allow
+    "docs/*": allow
   glob:
-    "docs/**/*": allow
+    "docs/*": allow
   grep:
-    "docs/**/*": allow
+    "docs/*": allow
   edit:
     "docs/decisions/*": allow
   bash:

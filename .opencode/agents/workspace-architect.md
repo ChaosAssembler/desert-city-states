@@ -16,10 +16,10 @@ permission:
     "rm *": ask
     "mv *": ask
   edit:
-    "**/Cargo.toml": allow
-    "**/rust-toolchain.toml": allow
-    "**/rust-toolchain": allow
-    "**/.cargo/config.toml": allow
+    "*/Cargo.toml": allow
+    "*/rust-toolchain.toml": allow
+    "*/rust-toolchain": allow
+    "*/.cargo/config.toml": allow
   skill:
     rust-workspace-management: allow
     subagent-autonomy: allow

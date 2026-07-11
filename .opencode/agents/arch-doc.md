@@ -6,7 +6,7 @@ permission:
   glob: allow
   grep: allow
   edit:
-    "docs/**/*.md": allow
+    "docs/*.md": allow
   bash:
     "ls *": allow
     "find *": allow
