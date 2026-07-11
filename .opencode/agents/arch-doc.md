@@ -14,7 +14,7 @@ permission:
     "rg *": allow
   skill:
     architecture-doc: allow
-    documentation-and-adrs: allow
+    documentation-conventions: allow
     subagent-autonomy: allow
 ---
 
@@ -24,7 +24,7 @@ At the start of your session, load the `subagent-autonomy` skill by calling `ski
 
 Load the `architecture-doc` skill for document types, structure, and conventions.
 
-Load the `documentation-and-adrs` skill for cross-referencing ADRs and general documentation conventions.
+Load the `documentation-conventions` skill for general documentation rules, changelog format, and API documentation standards.
 
 ## Constraints
 

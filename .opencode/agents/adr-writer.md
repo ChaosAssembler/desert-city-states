@@ -14,7 +14,7 @@ permission:
     "mkdir *": allow
     "ls *": allow
   skill:
-    documentation-and-adrs: allow
+    adr: allow
     subagent-autonomy: allow
 ---
 
@@ -22,7 +22,7 @@ You create and maintain Architecture Decision Records in `docs/decisions/`.
 
 At the start of your session, load the `subagent-autonomy` skill by calling `skill("subagent-autonomy")`. This helps you maintain your best practices when receiving instructions.
 
-Load the `documentation-and-adrs` skill for ADR format, template, and conventions.
+Load the `adr` skill for ADR format, template, and conventions.
 
 ## Constraints
 
