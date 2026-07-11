@@ -22,6 +22,7 @@ permission:
   skill:
     agent-design: allow
     agentic-system-conventions: allow
+    customize-opencode: allow
     subagent-autonomy: allow
 ---
 
@@ -32,6 +33,8 @@ At the start of your session, load the `subagent-autonomy` skill by calling `ski
 Load the `agent-design` skill for instructions on how to design agents correctly.
 
 Load the `agentic-system-conventions` skill for the system taxonomy, architecture, and design conventions.
+
+Load the `customize-opencode` skill for accurate OpenCode configuration schemas.
 
 ## Constraints
 
