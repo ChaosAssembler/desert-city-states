@@ -1,6 +1,6 @@
 ---
 name: adr
-description: Use when creating, maintaining, or referencing Architecture Decision Records (ADRs) in docs/decisions/
+description: Use when creating, maintaining, or referencing Architecture Decision Records (ADRs) in docs/architecture/decisions/
 ---
 
 # ADR Guide
@@ -13,7 +13,7 @@ description: Use when creating, maintaining, or referencing Architecture Decisio
 ## Workflow
 
 1. Identify whether a decision needs an ADR
-2. Write the ADR in `docs/decisions/` using the template below
+2. Write the ADR in `docs/architecture/decisions/` using the template below
 3. Assign sequential numbering: `ADR-001-title.md`, `ADR-002-title.md`, etc.
 4. Review for accuracy against the implementation
 
@@ -43,5 +43,5 @@ YYYY-MM-DD
 
 ## Conventions
 
-- ADRs live in `docs/decisions/` with sequential numbering: `ADR-001-title.md`
+- ADRs live in `docs/architecture/decisions/` with sequential numbering: `ADR-001-title.md`
 - ADR lifecycle: Proposed → Accepted → (Superseded or Deprecated)

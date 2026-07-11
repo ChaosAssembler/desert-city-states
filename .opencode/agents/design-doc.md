@@ -31,4 +31,4 @@ Load the `design-doc` skill for game design documentation patterns, subsystem te
 
 - Only create and modify files under `docs/design/`
 - Never modify source code — read it to understand implementation, document design in `docs/design/`
-- Cross-reference architecture docs in `docs/architecture/` and ADRs in `docs/decisions/` when relevant
+- Cross-reference architecture docs in `docs/architecture/` and ADRs in `docs/architecture/decisions/` when relevant

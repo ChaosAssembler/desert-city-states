@@ -37,5 +37,5 @@ description: Use when generating architecture documentation — module docs, sys
 - Architecture docs live in `docs/architecture/`
 - Use Mermaid diagrams for visual representations when helpful
 - Include file paths in code references: `crates/game/src/map/hex.rs`
-- Cross-link related ADRs: `See [ADR-001](../decisions/ADR-001-title.md)`
+- Cross-link related ADRs: `See [ADR-001](decisions/ADR-001-title.md)`
 - One topic per document — split if a document covers multiple concerns
