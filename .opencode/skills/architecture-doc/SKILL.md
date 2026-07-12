@@ -24,6 +24,7 @@ description: Use when generating architecture documentation — module docs, sys
    - **Technical overview** — high-level architecture for onboarding
 4. Write the document following conventions below
 5. Cross-reference related documents and ADRs
+6. Review documentation for accuracy against the actual implementation
 
 ## Document Types
 

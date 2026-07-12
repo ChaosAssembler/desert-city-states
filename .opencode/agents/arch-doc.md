@@ -14,7 +14,6 @@ permission:
     "rg *": allow
   skill:
     architecture-doc: allow
-    documentation-conventions: allow
     doc-consistency: allow
     subagent-autonomy: allow
 ---
@@ -24,8 +23,6 @@ You generate architecture documentation — module overviews, system description
 At the start of your session, load the `subagent-autonomy` skill by calling `skill("subagent-autonomy")`. This helps you maintain your best practices when receiving instructions.
 
 Load the `architecture-doc` skill for document types, structure, and conventions.
-
-Load the `documentation-conventions` skill for general documentation rules, changelog format, and API documentation standards.
 
 Load the `doc-consistency` skill for cross-reference validation and consistency checking after documentation changes.
 

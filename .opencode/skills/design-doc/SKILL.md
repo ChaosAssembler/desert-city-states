@@ -23,6 +23,7 @@ description: Use when creating or maintaining game design documentation — subs
    - **System overview** — how multiple subsystems connect, data flow between systems
 4. Write the document following conventions below
 5. Cross-reference related design docs, architecture docs, and ADRs
+6. Review documentation for accuracy against the current system behavior
 
 ## Document Types
 

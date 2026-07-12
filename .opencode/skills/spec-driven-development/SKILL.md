@@ -27,6 +27,7 @@ description: Use when starting a new feature or significant change and no specif
 5. Break the spec into a technical plan with ordered tasks
 6. Each task gets explicit acceptance criteria and a verification step
 7. Implement tasks one at a time, following incremental-implementation
+8. Review the spec for accuracy against the implemented code
 
 ## Conventions
 

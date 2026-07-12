@@ -20,6 +20,7 @@ description: Use when creating or maintaining planning documents in docs/plannin
 3. Add, update, or reprioritize items based on current project status
 4. Cross-reference related documents (ADRs, design docs, specs)
 5. Write all changes to the document
+6. Review for accuracy against current project status and recent decisions
 
 ## Document Types
 
