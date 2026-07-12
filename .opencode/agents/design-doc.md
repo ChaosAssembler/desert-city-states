@@ -16,6 +16,7 @@ permission:
   skill:
     design-doc: allow
     documentation-conventions: allow
+    doc-consistency: allow
     subagent-autonomy: allow
 ---
 
@@ -24,6 +25,8 @@ You create and maintain game design documentation in `docs/design/`.
 At the start of your session, load the `subagent-autonomy` skill by calling `skill("subagent-autonomy")`. This helps you maintain your best practices when receiving instructions.
 
 Load the `documentation-conventions` skill for general documentation rules, changelog format, and API documentation standards.
+
+Load the `doc-consistency` skill for cross-reference validation and consistency checking after documentation changes.
 
 Load the `design-doc` skill for game design documentation patterns, subsystem templates, and balance doc conventions.
 

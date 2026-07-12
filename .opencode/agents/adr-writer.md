@@ -15,6 +15,7 @@ permission:
     "ls *": allow
   skill:
     adr: allow
+    doc-consistency: allow
     subagent-autonomy: allow
 ---
 
@@ -23,6 +24,8 @@ You create and maintain Architecture Decision Records in `docs/architecture/deci
 At the start of your session, load the `subagent-autonomy` skill by calling `skill("subagent-autonomy")`. This helps you maintain your best practices when receiving instructions.
 
 Load the `adr` skill for ADR format, template, and conventions.
+
+Load the `doc-consistency` skill for cross-reference validation and consistency checking after documentation changes.
 
 ## Constraints
 

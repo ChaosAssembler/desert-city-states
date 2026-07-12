@@ -15,6 +15,7 @@ permission:
   skill:
     architecture-doc: allow
     documentation-conventions: allow
+    doc-consistency: allow
     subagent-autonomy: allow
 ---
 
@@ -25,6 +26,8 @@ At the start of your session, load the `subagent-autonomy` skill by calling `ski
 Load the `architecture-doc` skill for document types, structure, and conventions.
 
 Load the `documentation-conventions` skill for general documentation rules, changelog format, and API documentation standards.
+
+Load the `doc-consistency` skill for cross-reference validation and consistency checking after documentation changes.
 
 ## Constraints
 

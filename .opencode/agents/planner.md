@@ -16,6 +16,7 @@ permission:
   skill:
     planning: allow
     documentation-conventions: allow
+    doc-consistency: allow
     subagent-autonomy: allow
 ---
 
@@ -26,6 +27,8 @@ At the start of your session, load the `subagent-autonomy` skill by calling `ski
 Load the `planning` skill for planning document types, format, workflow, and conventions.
 
 Load the `documentation-conventions` skill for general documentation rules.
+
+Load the `doc-consistency` skill for cross-reference validation and consistency checking after documentation changes.
 
 ## Constraints
 
