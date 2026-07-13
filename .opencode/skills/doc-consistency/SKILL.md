@@ -68,31 +68,4 @@ Before renaming or moving any documentation file:
 
 ## Issue Reporting
 
-Report unresolved issues as structured text using this format:
-
-```markdown
-## Consistency Verification
-
-### Checked
-- [list of files and patterns checked]
-
-### Issues Found
-| Severity | File | Reference | Problem | Fix Action |
-|----------|------|-----------|---------|------------|
-| error | combat.md | `DD §8.4` | Target section not found in DD | REPORT |
-| warning | movement.md | `ARCH §4` | Terminology mismatch: "hex grid" vs "hexgrid" | FIX |
-
-### Summary
-- Errors: 1 (report to orchestrator)
-- Warnings: 0 pending, 1 auto-fixed
-```
-
-Severity levels:
-
-- **error** — broken reference, missing target file, invalid or missing required metadata
-- **warning** — terminology drift, missing bidirectional reference, stale but resolvable reference
-
-Fix actions:
-
-- **FIX** — issue was auto-fixed within edit scope
-- **REPORT** — issue is outside edit scope, requires action from the subagent that owns the affected file
+Report unresolved issues in a structured table with columns: Severity (error/warning), File, Reference, Problem, and Fix Action (FIX/REPORT). Include a checked-items list and issue-count summary.

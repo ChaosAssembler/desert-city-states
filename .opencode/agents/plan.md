@@ -6,6 +6,8 @@ permission:
     explore: allow
     consultant: allow
     researcher: allow
+    doc-reviewer: allow
+    agentic-reviewer: allow
   question: allow
   skill:
     delegation-guide: allow
