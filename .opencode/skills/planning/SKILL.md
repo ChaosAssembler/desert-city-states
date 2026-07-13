@@ -95,6 +95,6 @@ Target: 2027-Q1
 ### Cross-References
 
 Reference related documents using relative paths:
-- ADRs: `See [ADR-001](../architecture/decisions/ADR-001-title.md)`
+- ADRs: `See [ADR-0001](../architecture/decisions/ADR-0001-title.md)`
 - Design docs: `See [Feature: Combat](../design/Combat.md)`
 - Specs: `See [Spec: Movement](../specs/movement.md)`
