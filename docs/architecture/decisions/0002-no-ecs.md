@@ -1,10 +1,11 @@
-# 0002-no-ecs
-
-## Title
-No Entity-Component-System (plain data + functions)
+# ADR-0002: No Entity-Component-System (plain data + functions)
 
 ## Status
 Accepted
+
+## Date
+
+2025-01-01
 
 ## Context
 Desert City States is a **turn-based** game on a **small board** (≤ ~271 tiles, tens of entities) where the simulation advances a handful of entities a few times per *turn*, not per *frame*. Determinism and full `serde` serialization of game state are first-class priorities (Rule A). The natural data shape is a single `GameState` aggregate holding typed collections keyed by stable integer IDs, queried by explicit functions.

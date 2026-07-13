@@ -1,6 +1,6 @@
 # Gameplay Spec: Combat
 
-> **Phase:** 3 — Per-system gameplay specs (group: gameplay)
+> **Phase:** 2 — Per-system gameplay specs (group: gameplay)
 > **Crate:** `dcs-core` (module `dcs-core::combat`)
 > **Status:** Draft for review
 > **Implements:** DD §10; ARCH §5, §16; ADR-0004 (Command-only), ADR-0006 (RNG in state)
@@ -89,8 +89,9 @@ let terrain_def = TERRAIN[defender_tile.terrain].defense_mod as f32;
 
 let atk_pos = positioning_attacker(attacker_tile, defender_tile); // §6.2 (flank 1.25, Salt-Flats-exposed 0.90)
 let def_pos = 1.0;                                              // defender positional (terrain already in def_mod)
+let morale  = 1.0;                                              // reserved for post-MVP (DD §10.3); always 1.0 in MVP
 
-let attack_power  = atk * atk_pos;                            // morale = 1.0 (MVP off); atk_pos encodes attacker positioning (flank / Salt-Flats-exposed)
+let attack_power  = atk * atk_pos * morale;                    // atk_pos encodes attacker positioning (flank / Salt-Flats-exposed)
 let defense_power = def * (1.0 + terrain_def) * def_pos;
 
 let odds = attack_power / (attack_power + defense_power);

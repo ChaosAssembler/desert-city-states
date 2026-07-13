@@ -338,7 +338,7 @@ Each unit has: **Move** (hexes/turn), **Attack**, **Defense**, **HP**, **Upkeep*
 
 - **Scout:** Move (reveals), Found City, Embark (none). No attack worth noting.
 - **Caravan Guard:** Move, **Patrol** (station on route tile → grants control), Garrison (boost city defense if in city tile).
-- **Raider:** Move, **Raid Route** (sever/threaten an exposed route tile), **Raid City** (attack undefended/weak city — reduces population or steals Wealth).
+- **Raider:** Move, **Raid Route** (sever/threaten an exposed route tile), **Raid City** (attack undefended/weak city — reduces population; captures at Pop 0).
 
 ### 9.4 Training & Upkeep
 

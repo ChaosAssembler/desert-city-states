@@ -1,6 +1,6 @@
 # Gameplay Spec: Cities
 
-> **Phase:** 3 — Per-system gameplay specs (group: gameplay)
+> **Phase:** 2 — Per-system gameplay specs (group: gameplay)
 > **Crate:** `dcs-core` (module `dcs-core::world` / entities)
 > **Status:** Draft for review
 > **Implements:** DD §7; ARCH §3, §15; ADR-0002 (no ECS), ADR-0004 (Command-only)
@@ -22,7 +22,7 @@ source besides routes. Tied to DD §7.
 - Population growth model and its gating of building slots / unit caps / defense.
 - Worked-ring definition and what it yields.
 - 6 buildings (Well, Market, Granary, Watchtower, Caravanserai, Temple) — effects.
-- 4 specializations (TradeHub, WellFort, Fortress, ScholarOutpost) — distinct roles.
+- 4 specializations (Trade Hub, Well Fort, Fortress, Scholar Outpost) — distinct roles.
 - Per-city production/upgrade queue (Build/Train/Specialize ordering).
 - How a city supplies resources and trains units.
 
@@ -94,8 +94,8 @@ pub const POP_FOR_SPECIALIZE: u32 = 3;                         // DD §7.5
 **Planning-phase directive (hard implementation requirement):** the user has
 decided that the set of **buildings and city specializations may change later**.
 The concrete **6-building catalog** (Well, Market, Granary, Watchtower,
-Caravanserai, Temple) and **4 specializations** (TradeHub, WellFort, Fortress,
-ScholarOutpost) are **CONTENT DATA, not engine/simulation logic**, and must be
+Caravanserai, Temple) and **4 specializations** (Trade Hub, Well Fort, Fortress,
+Scholar Outpost) are **CONTENT DATA, not engine/simulation logic**, and must be
 implemented accordingly.
 
 - Each entry's definition — name, build/specialize cost, and effects — lives in
@@ -209,7 +209,7 @@ Slot/eligibility:
   `stockpiles` field mirrors the relevant slice for display/debug; the canonical
   pool is `Player.resources`.
 - **Training:** `TrainUnit{city,kind}` (or a queued `Train`) spends
-  `UNIT_TRAIN_COST[kind]` Wealth (Fortress −25%; TradeHub Market discount does not
+  `UNIT_TRAIN_COST[kind]` Wealth (Fortress −25%; Trade Hub Market discount does not
   apply to units). Spawns the `Unit` on the city tile if unoccupied (else on a free
   worked-ring tile); respects the empire unit cap `2 + total Pop`. Emits `UnitTrained`.
   Fortress also grants **faster** training (same cost, −1 turn if a turn-counter is
@@ -233,7 +233,7 @@ Slot/eligibility:
 - [ ] `building_slots` = 2 + population/2; `Build` beyond slots rejected.
 - [ ] `Specialize` requires Pop ≥ 3 + 10 Influence; once set, re-specialize rejected.
 - [ ] Well +2 Water, Market +2 route Wealth, Granary +5 Water cap, Temple +1 Influence, Watchtower +1 adjacent def, Caravanserai −1 route upkeep & +1 slot, all applied.
-- [ ] TradeHub +50% route Wealth +1 slot + Market −4; WellFort +3 Water & no-starve floor; Fortress +3 def + −25% train; Scholar +2 Influence +1 relic +1 sight — all distinct, non-overlapping.
+- [ ] Trade Hub +50% route Wealth +1 slot + Market −4; Well Fort +3 Water & no-starve floor; Fortress +3 def + −25% train; Scholar +2 Influence +1 relic +1 sight — all distinct, non-overlapping.
 - [ ] `TrainUnit` spends correct Wealth; Fortress discount applies; unit cap `2+totalPop` enforced.
 - [ ] Captured city flips owner; routes re-evaluated next `advance_turn`.
 - [ ] Queue processes in order, halts on insufficient resources, preserves remaining orders.
@@ -243,7 +243,7 @@ Slot/eligibility:
 - Design: DD §7 (cities) — §7.1 founding, §7.2 growth, §7.3 worked ring, §7.4 buildings, §7.5 specializations, §7.6 upgrade paths; §9.4 training; §12 cities reveal fog.
 - Architecture: ARCH §3 (City struct), §15 (world module), §16 (errors).
 - ADRs: ADR-0002 (no ECS), ADR-0004 (Command pattern), ADR-0003 (pure core).
-- Related specs: `gameplay-resources-economy.md` (applies building/spec yields + caps), `gameplay-caravan-routes.md` (route_slots, WellFort water supply), `gameplay-units-movement.md` (TrainUnit, unit cap), `gameplay-fog-of-war.md` (city_sight reveal), `foundation-core-data-model.md`, `foundation-turn-engine.md`.
+- Related specs: `gameplay-resources-economy.md` (applies building/spec yields + caps), `gameplay-caravan-routes.md` (route_slots, WellFort water supply), `gameplay-combat.md` (combat interactions: Fortress defense bonus, city sieges, Well Fort starvation floor), `gameplay-units-movement.md` (TrainUnit, unit cap), `gameplay-fog-of-war.md` (city_sight reveal), `foundation-core-data-model.md`, `foundation-turn-engine.md`.
 
 ## 10. Open Questions (carried, not resolved)
 

@@ -1,10 +1,11 @@
-# 0001-use-macroquad
-
-## Title
-Rendering engine = macroquad (2D, immediate-mode)
+# ADR-0001: Rendering engine = macroquad (2D, immediate-mode)
 
 ## Status
 Accepted
+
+## Date
+
+2025-01-01
 
 ## Context
 Desert City States is a small-scale, turn-based hex 4X. The presentation requirement is 2D graphical (not terminal/TUI). For the MVP we need to ship a fast, readable board quickly: low API churn, a built-in UI for HUD/menus, and easy pan/zoom camera control. The simulation advances only on End Turn (not per frame), so a retained-mode scene graph is unnecessary overhead. The architecture also requires rendering to be fully isolated (Rule B) so the engine can be swapped without touching the pure core.

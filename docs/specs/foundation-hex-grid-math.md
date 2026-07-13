@@ -1,6 +1,6 @@
 # Foundation Spec: Hex Grid Math
 
-> **Phase:** 3 — Per-system foundation specs
+> **Phase:** 1 — Per-system foundation specs
 > **Crate:** `dcs-core` (module `dcs-core::hex`)
 > **Status:** Draft for review
 > **Implements:** DD §5.1; ARCH §4; ADR-0005 (axial hex, implemented in-core)

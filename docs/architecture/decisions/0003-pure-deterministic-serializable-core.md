@@ -1,10 +1,11 @@
-# 0003-pure-deterministic-serializable-core
-
-## Title
-Pure, deterministic, serde-serializable simulation core, isolated from rendering
+# ADR-0003: Pure, deterministic, serde-serializable simulation core, isolated from rendering
 
 ## Status
 Accepted
+
+## Date
+
+2025-01-01
 
 ## Context
 Testability, reproducibility, and save/replay are core goals. We must be able to run the *entire* game headlessly in unit/integration tests, fuzz the turn resolver, and reproduce balance bugs from a save — all independently of the renderer. The architecture therefore rests on three hard rules: the core is pure, deterministic, and serializable (Rule A), rendering is a separate layer (Rule B), and a thin glue layer orchestrates (Rule C).

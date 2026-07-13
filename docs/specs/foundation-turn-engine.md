@@ -1,6 +1,6 @@
 # Foundation Spec: Turn Engine
 
-> **Phase:** 3 — Per-system foundation specs
+> **Phase:** 1 — Per-system foundation specs
 > **Crate:** `dcs-core` (module `dcs-core::turn`) + `dcs-protocol` (`Command`/`GameEvent`)
 > **Status:** Draft for review
 > **Implements:** DD §4, §16.1; ARCH §5; ADR-0004 (sequential turns + Command pattern)

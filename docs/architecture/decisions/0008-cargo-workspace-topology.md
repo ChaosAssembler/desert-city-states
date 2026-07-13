@@ -1,10 +1,11 @@
-# 0008-cargo-workspace-topology
-
-## Title
-Cargo workspace topology
+# ADR-0008: Cargo workspace topology
 
 ## Status
 Accepted
+
+## Date
+
+2025-01-01
 
 ## Context
 We need clean, enforceable boundaries between the pure simulation, the rendering layer, the glue/orchestration, and the shared save/command contract. The architecture's rules (pure core, separated rendering, thin glue) are only as strong as the module ownership that backs them.

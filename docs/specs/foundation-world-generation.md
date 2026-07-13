@@ -1,6 +1,6 @@
 # Foundation Spec: World Generation
 
-> **Phase:** 3 — Per-system foundation specs
+> **Phase:** 1 — Per-system foundation specs
 > **Crate:** `dcs-core` (module `dcs-core::map` / `world`)
 > **Status:** Draft for review
 > **Implements:** DD §5.2–§5.7; ARCH §10; ADR-0006 (deterministic seeded PRNG)

@@ -10,25 +10,27 @@ implementation and consistent with the design doc and the 8 ADRs. No `.rs` or
 
 ## Spec Index
 
+### Foundation group (Phase 1)
+
 | Spec | File | Crate | Implements | Status |
 |---|---|---|---|---|
 | Core Data Model | [foundation-core-data-model.md](./foundation-core-data-model.md) | dcs-core | DD §5–§9,§13; ARCH §3; ADR-0002/0003 | Draft |
 | Hex Grid Math | [foundation-hex-grid-math.md](./foundation-hex-grid-math.md) | dcs-core (`hex`) | DD §5.1; ARCH §4; ADR-0005 | Draft |
 | World Generation | [foundation-world-generation.md](./foundation-world-generation.md) | dcs-core (`map`) | DD §5.2–§5.7; ARCH §10; ADR-0006 | Draft |
 | Turn Engine | [foundation-turn-engine.md](./foundation-turn-engine.md) | dcs-core (`turn`) + dcs-protocol | DD §4,§16.1; ARCH §5; ADR-0004 | Draft |
-| Scenario Config | [foundation-scenario-config.md](./foundation-scenario-config.md) | dcs-core (`scenario`) | DD §5.2,§13,§16.2; ARCH §11 | Draft |
-| Save / Load | [foundation-save-load.md](./foundation-save-load.md) | dcs-core (`serialize`) + dcs-protocol | ARCH §7; ADR-0007 | Draft |
+| Scenario Config | [foundation-scenario-config.md](./foundation-scenario-config.md) | dcs-core (`scenario`) | DD §5.2,§13,§16.2; ARCH §11; ADR-0003/0007 | Draft |
+| Save / Load | [foundation-save-load.md](./foundation-save-load.md) | dcs-core (`serialize`) + dcs-protocol | DD §5.4; ARCH §7; ADR-0007 | Draft |
 
 ### Gameplay group (Phase 3)
 
 | Spec | File | Crate | Implements | Status |
 |---|---|---|---|---|
-| Resources & Economy | [gameplay-resources-economy.md](./gameplay-resources-economy.md) | dcs-core (`economy`) | DD §6; ARCH §3,§5 | Draft |
-| Cities | [gameplay-cities.md](./gameplay-cities.md) | dcs-core (`world`) | DD §7; ARCH §3,§15 | Draft |
-| Caravan & Trade Routes | [gameplay-caravan-routes.md](./gameplay-caravan-routes.md) | dcs-core (`caravan`) | DD §8; ARCH §4.3,§5,§15 | Draft |
-| Units & Movement | [gameplay-units-movement.md](./gameplay-units-movement.md) | dcs-core (`world`/`hex`) | DD §9; ARCH §4.3,§5 | Draft |
-| Combat | [gameplay-combat.md](./gameplay-combat.md) | dcs-core (`combat`) | DD §10; ARCH §5,§16 | Draft |
-| Fog of War | [gameplay-fog-of-war.md](./gameplay-fog-of-war.md) | dcs-core (`fog`) | DD §12; ARCH §12 | Draft |
+| Resources & Economy | [gameplay-resources-economy.md](./gameplay-resources-economy.md) | dcs-core (`economy`) | DD §6; ARCH §3,§5,§16; ADR-0004 | Draft |
+| Cities | [gameplay-cities.md](./gameplay-cities.md) | dcs-core (`world`) | DD §7; ARCH §3,§15; ADR-0002/0004 | Draft |
+| Caravan & Trade Routes | [gameplay-caravan-routes.md](./gameplay-caravan-routes.md) | dcs-core (`caravan`) | DD §8; ARCH §4.3,§5,§15; ADR-0004/0005 | Draft |
+| Units & Movement | [gameplay-units-movement.md](./gameplay-units-movement.md) | dcs-core (`world`/`hex`) | DD §9; ARCH §4.3,§5,§15; ADR-0004/0005 | Draft |
+| Combat | [gameplay-combat.md](./gameplay-combat.md) | dcs-core (`combat`) | DD §10; ARCH §5,§16; ADR-0004/0006 | Draft |
+| Fog of War | [gameplay-fog-of-war.md](./gameplay-fog-of-war.md) | dcs-core (`fog`) | DD §12; ARCH §12; ADR-0003/0004 | Draft |
 
 ### Behavior & Presentation group (Phase 3)
 

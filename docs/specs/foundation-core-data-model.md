@@ -1,6 +1,6 @@
 # Foundation Spec: Core Data Model
 
-> **Phase:** 3 — Per-system foundation specs
+> **Phase:** 1 — Per-system foundation specs
 > **Crate:** `dcs-core` (pure sim) + `dcs-protocol` (shared contract)
 > **Status:** Draft for review
 > **Implements:** DD §5.3, §6, §7, §8, §9, §13; ARCH §3; ADR-0002 (no ECS), ADR-0003 (pure core)

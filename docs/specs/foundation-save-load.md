@@ -1,6 +1,6 @@
 # Foundation Spec: Save / Load
 
-> **Phase:** 3 — Per-system foundation specs
+> **Phase:** 1 — Per-system foundation specs
 > **Crate:** `dcs-core` (module `dcs-core::serialize`) + `dcs-protocol` (`VersionedSave<T>`)
 > **Status:** Draft for review
 > **Implements:** DD §5.4 (reproducibility), ARCH §7; ADR-0007 (serde + version envelope)
@@ -122,7 +122,7 @@ Ok(payload)
 - Migrations must be **deterministic** (no RNG) so a migrated save equals a
   re-serialized current-state save.
 
-## 7. Reproducibility (why RNG-in-state matters)
+### 6.1 Reproducibility Guarantee
 
 `GameState.rng` (ADR-0006) is serialized with everything else. Therefore:
 
@@ -134,7 +134,7 @@ Ok(payload)
 Render/app state (camera, selection, UI panels) is **never** part of the file —
 it is ephemeral and rebuilt on load (ARCH §7).
 
-## 8. Edge Cases / Invariants
+## 7. Edge Cases / Invariants
 
 - **Invariant:** a save written by version `V` loaded by version `V` round-trips
   bit-for-bit in `payload` (modulo format canonicalization for json).
@@ -147,7 +147,7 @@ it is ephemeral and rebuilt on load (ARCH §7).
 - File extension → format: `.json`→Json, `.postcard`/`.bin`→Postcard (or
   `.bincode`→Bincode). Unknown → default to Postcard for ship.
 
-## 9. Acceptance Criteria / Unit-Test Checklist
+## 8. Acceptance Criteria / Unit-Test Checklist
 
 - [ ] `save`→`load` round-trip yields a `GameState` deep-equal to the original (all fields incl. `rng` state).
 - [ ] Json and Postcard formats produce loadable saves for the same state.
@@ -158,7 +158,7 @@ it is ephemeral and rebuilt on load (ARCH §7).
 - [ ] `serde_json` output for a fixed seeded game is byte-stable across runs (FxHashMap order).
 - [ ] `load` auto-detects format from extension.
 
-## 10. References
+## 9. References
 
 - Design: DD §5.4 (determinism / shareable maps).
 - Architecture: ARCH §7 (save/load), §6 (replay == save), §16 (errors/logging).
@@ -168,7 +168,7 @@ it is ephemeral and rebuilt on load (ARCH §7).
   `foundation-turn-engine.md` (`Command` log replay), `foundation-scenario-config.md`
   (`scenario` is a `GameState` field, not separately versioned).
 
-## 11. Open Questions (carried)
+## 10. Open Questions (carried)
 
 - **ARCH OQ-5 / OQ-6:** Final ship format (postcard vs bincode) and PRNG crate
   (`nanorand` vs `rand::StdRng`) are recommended-but-open; both are abstracted

@@ -1,6 +1,6 @@
 # Gameplay Spec: Fog of War
 
-> **Phase:** 3 — Per-system gameplay specs (group: gameplay)
+> **Phase:** 2 — Per-system gameplay specs (group: gameplay)
 > **Crate:** `dcs-core` (module `dcs-core::fog`)
 > **Status:** Draft for review
 > **Implements:** DD §12; ARCH §12; ADR-0003 (pure core), ADR-0004 (Command-only)
@@ -89,7 +89,7 @@ pub fn is_route_visible(state: &GameState, viewer: PlayerId, route: RouteId) -> 
 | Caravan Guard | `SIGHT_GUARD` (1) | minimal |
 | Raider | `SIGHT_RAIDER` (2) | |
 | City (base) | `SIGHT_CITY_BASE` (2) | around city tile; `range(city_tile, 2)` |
-| City = ScholarOutpost | + `SIGHT_SCHOLAR_BONUS` (→3) | reveals more fog (DD §7.5) |
+| City = Scholar Outpost | + `SIGHT_SCHOLAR_BONUS` (→3) | reveals more fog (DD §7.5) |
 | Watchtower building | `SIGHT_WATCHTOWER` (2) | around the **Watchtower tile**, +1 def to adjacent (cities spec) |
 
 ### 6.2 Reveal triggers
@@ -106,7 +106,7 @@ pub fn is_route_visible(state: &GameState, viewer: PlayerId, route: RouteId) -> 
   path endpoints' cities for the owner (the owner already sees its own cities).
 - **Watchtower/Scholar** contribute their radius continuously: recomputed each
   `advance_turn` by re-revealing all owned cities' current sight (handles a city
-  that *later* specializes into ScholarOutpost or builds a Watchtower).
+   that *later* specializes into Scholar Outpost or builds a Watchtower).
 
 ### 6.2.1 Review decisions (planning review)
 

@@ -1,6 +1,6 @@
 # Foundation Spec: Scenario Configuration
 
-> **Phase:** 3 — Per-system foundation specs
+> **Phase:** 1 — Per-system foundation specs
 > **Crate:** `dcs-core` (module `dcs-core::scenario`) + `dcs-protocol` (shared types)
 > **Status:** Draft for review
 > **Implements:** DD §5.2, §13, §16.2; ARCH §11; ADR-0003 / ADR-0007 (config lives in core, serialized)

@@ -1,6 +1,6 @@
 # Gameplay Spec: Resources & Economy
 
-> **Phase:** 3 — Per-system gameplay specs (group: gameplay)
+> **Phase:** 2 — Per-system gameplay specs (group: gameplay)
 > **Crate:** `dcs-core` (module `dcs-core::economy`)
 > **Status:** Draft for review
 > **Implements:** DD §6; ARCH §3, §5, §16; ADR-0004 (Command-only mutation)
@@ -210,7 +210,7 @@ for city in cities_of(player):
 - [ ] A city with one active + one Severed route is **not** isolated.
 - [ ] Worked-ring yields match `TERRAIN` table (Oasis 3/1, SaltFlats 0/1).
 - [ ] Stockpile clamps at `empire_cap`; Granary raises Water cap by exactly 5.
-- [ ] Route Wealth uses base 2 + trade/market/distance/synergy + TradeHub ×1.5.
+- [ ] Route Wealth uses base 2 + trade/market/distance/synergy + Trade Hub ×1.5.
 - [ ] Water transfer delivers +2 only to a non-self-sufficient sink endpoint.
 - [ ] Starvation: city at Water 0 with negative flow loses 1 pop; Pop 0 ⇒ neutralized.
 - [ ] Well Fort city never drops below Pop 1 from starvation.

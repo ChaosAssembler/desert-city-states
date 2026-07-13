@@ -1,10 +1,11 @@
-# 0006-deterministic-seeded-prng
-
-## Title
-Deterministic seeded PRNG owned by GameState
+# ADR-0006: Deterministic seeded PRNG owned by GameState
 
 ## Status
 Accepted
+
+## Date
+
+2025-01-01
 
 ## Context
 Reproducibility, headless testing, and save/replay all require that **all** randomness be fully controlled and serialized. The architecture's Rule A forbids `std::time`, `rand::thread_rng`, system entropy, or nondeterministic hashing anywhere in `dcs-core`. A `(scenario, seed, command-history)` must fully determine a game.

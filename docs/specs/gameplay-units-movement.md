@@ -1,6 +1,6 @@
 # Gameplay Spec: Units & Movement
 
-> **Phase:** 3 — Per-system gameplay specs (group: gameplay)
+> **Phase:** 2 — Per-system gameplay specs (group: gameplay)
 > **Crate:** `dcs-core` (module `dcs-core::world` / entities + `dcs-core::hex`)
 > **Status:** Draft for review
 > **Implements:** DD §9; ARCH §4.3, §5, §15; ADR-0004 (Command-only), ADR-0005 (hex in-core)
@@ -58,6 +58,18 @@ pub const TRADE_HUB_MARKET_DISCOUNT: i32 = 4;         // not for units; cities s
 
 `UnitAbility` (core-data-model §4.10): `None | Patrolling | Garrisoned`.
 
+### 4.1 Unit roster — fixed at 3 kinds (design decision)
+
+**The unit roster is FIXED at the 3 `UnitKind`s — Scout, CaravanGuard, Raider —
+for both the MVP and the current full-scope design. No 4th unit kind is planned.**
+Per the user's directive: *"stay with the 3 units we have."*
+
+- **Counters are EMERGENT from stats**, not an explicit rock-paper-scissors rule.
+  There is no defined RPS relationship; balance is first-pass (DD #3 / OQ-1).
+- **If playtesting shows a unit (e.g. Guard) is too dominant, the response is to
+  TUNE STATS, not to add a unit.** Adding a unit later remains possible via the
+  data-driven content system (the `UNITS` table is content), but is **not planned**.
+
 ## 5. Key Functions / API
 
 ```rust
@@ -83,18 +95,6 @@ pub fn unit_sight(state: &GameState, unit: UnitId) -> u32;
 /// Tiles under this player's Zone of Control (Fortress-projected, §6.3).
 pub fn zone_of_control(state: &GameState, player: PlayerId) -> FxHashSet<TileId>;
 ```
-
-### 6.7 Unit roster — fixed at 3 kinds (design decision)
-
-**The unit roster is FIXED at the 3 `UnitKind`s — Scout, CaravanGuard, Raider —
-for both the MVP and the current full-scope design. No 4th unit kind is planned.**
-Per the user's directive: *"stay with the 3 units we have."*
-
-- **Counters are EMERGENT from stats**, not an explicit rock-paper-scissors rule.
-  There is no defined RPS relationship; balance is first-pass (DD #3 / OQ-1).
-- **If playtesting shows a unit (e.g. Guard) is too dominant, the response is to
-  TUNE STATS, not to add a unit.** Adding a unit later remains possible via the
-  data-driven content system (the `UNITS` table is content), but is **not planned**.
 
 ## 6. Algorithms
 
@@ -139,8 +139,10 @@ Per the user's directive: *"stay with the 3 units we have."*
 
 ### 6.4 Training & upkeep (DD §9.4)
 
-- `TrainUnit{city,kind}` (or queued, cities spec §6.4): spend
-  `UNIT_TRAIN_COST[kind]` Wealth × `FORTRESS_TRAIN_DISCOUNT` if city is Fortress;
+- `TrainUnit{city,kind}` (or queued, cities spec §6.4): **Raider may only be trained
+  in a city with the Fortress specialization** (other kinds trainable at any city);
+  if `kind == Raider` and city is not Fortress → `Rejected(InvalidTrainingLocation)`.
+  Spend `UNIT_TRAIN_COST[kind]` Wealth × `FORTRESS_TRAIN_DISCOUNT` if city is Fortress;
   spawn `Unit{ hp: UNITS[kind].hp, moves_left: UNITS[kind].moves, ability:None }`
   on the city tile (or a free worked-ring tile). Emits `UnitTrained`.
 - **Unit cap:** empire-wide `cap = UNIT_CAP_BASE(2) + sum(population over living
@@ -172,7 +174,7 @@ move/found (fog spec). City/relic/Watchtower sight come from the cities/fog spec
 
 ## 7. Edge Cases / Invariants
 
-- `moves_left` resets to `UNITS[kind].moves` for all units at `advance_turn` (turn-engine §6.3 step 9).
+- `moves_left` resets to `UNITS[kind].moves` for all units at `advance_turn` (turn-engine §6.3 step 4).
 - A unit cannot move onto an enemy tile without triggering combat (no silent swap).
 - `Patrol`/`Garrison` require the unit be a **Caravan Guard** (other kinds → `Rejected(InvalidState)`).
 - `RaidRoute` requires a **Raider** on/adjacent to an **exposed** route tile; a controlled tile ⇒ contest, not free Threatened (caravan spec §6.6).
@@ -189,6 +191,7 @@ move/found (fog spec). City/relic/Watchtower sight come from the cities/fog spec
 - [ ] `Patrol` only valid for Caravan Guard on/adjacent to route tile; sets `Patrolling` + control.
 - [ ] `RaidRoute` only valid for Raider on/adjacent to an exposed route tile; cascades Threatened→Severed.
 - [ ] Training spends correct Wealth (Fortress −25%); unit cap `2+totalPop` enforced.
+- [ ] Training a Raider outside a Fortress city is rejected (`InvalidTrainingLocation`); Raider training inside a Fortress succeeds.
 - [ ] Upkeep non-payment disbands the unit (Wealth floored at 0).
 - [ ] `moves_left` reset at `advance_turn`.
 - [ ] Same seed+commands ⇒ identical movement/reveal/ruin outcomes (determinism).

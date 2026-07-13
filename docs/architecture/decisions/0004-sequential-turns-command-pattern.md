@@ -1,10 +1,11 @@
-# 0004-sequential-turns-command-pattern
-
-## Title
-Sequential turns with the Command pattern
+# ADR-0004: Sequential turns with the Command pattern
 
 ## Status
 Accepted
+
+## Date
+
+2025-01-01
 
 ## Context
 Classic 4X feel calls for players and AI acting one after another. Simultaneous resolution introduces fairness/race-condition complexity that adds little value for a turn-based game. We also need a single, auditable mutation path so that saves and replays are trivial and deterministic, and so the AI cannot cheat by reaching into state it shouldn't.

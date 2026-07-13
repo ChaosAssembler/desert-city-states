@@ -1,10 +1,11 @@
-# 0007-save-format-serde-version-envelope
-
-## Title
-Save format: serde with version envelope
+# ADR-0007: Save format: serde with version envelope
 
 ## Status
 Accepted
+
+## Date
+
+2025-01-01
 
 ## Context
 The game requires save/load, and we want a save to be the same operation as a deterministic replay. The entire `GameState` (core only — never render/app state like camera or UI) must round-trip through serialization. We also need forward-compatible saves so future balance/schema changes don't invalidate old files.

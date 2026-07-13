@@ -1,6 +1,6 @@
 # Presentation Spec: Rendering & UI
 
-> **Phase:** 3 — Per-system presentation specs (group: Behavior & Presentation)
+> **Phase:** 4 — Per-system presentation specs (group: Behavior & Presentation)
 > **Crate:** `dcs-render` (macroquad) + `dcs-app` (glue)
 > **Status:** Draft for review
 > **Implements:** DD §3 (Presentation & UI/UX); ARCH §8 (Rendering Integration); ADR-0001 (macroquad), ADR-0003 (render reads core, emits Commands only), ADR-0004 (Command pattern)

@@ -1,6 +1,6 @@
 # Gameplay Spec: Caravan & Trade Routes (SIGNATURE SYSTEM)
 
-> **Phase:** 3 — Per-system gameplay specs (group: gameplay)
+> **Phase:** 2 — Per-system gameplay specs (group: gameplay)
 > **Crate:** `dcs-core` (module `dcs-core::caravan`)
 > **Status:** Draft for review
 > **Implements:** DD §8; ARCH §4.3, §5, §15; ADR-0004 (Command-only), ADR-0005 (axial hex in-core)
@@ -172,7 +172,7 @@ wealth = floor(base)  -> u32
     else:
         transfer = WATER_TRANSFER_PER_ROUTE(2)
 ```
-The `+2` delivered to the dependent (non-WellFort) endpoint **offsets** the `−1`
+The `+2` delivered to the dependent (non-Well Fort) endpoint **offsets** the `−1`
 route upkeep, so a connected dependent city nets **+1 Water/turn** from the route on
 top of its own oasis, while an *isolated* city pays the isolation penalty (−2).
 This is the mechanical expression of "owning an oasis means nothing if the road dies" (DD §8.6).
@@ -261,7 +261,7 @@ The Raider-vs-route contest (combat spec §6.3) uses terrain to flip odds:
 2. `cost = ROUTE_ESTABLISH_BASE_COST(5) + path.len() * ROUTE_ESTABLISH_PER_TILE(1)`.
 3. Spend Wealth; compute `path = safe_route(cityA.tile, cityB.tile)`; store
    `CaravanRoute{status:Active, upkeep:ROUTE_UPKEEP_WATER(1), consecutive_threatened:0}`.
-4. Decrement `route_slots` on both endpoints (raised by Caravanserai/TradeHub, cities spec §4.1).
+4. Decrement `route_slots` on both endpoints (raised by Caravanserai/Trade Hub, cities spec §4.1).
 5. Emit `RouteCreated{route, from, to, path}`.
 
 ### 6.9 Stretch notes (excluded from MVP, DD §8.7)
@@ -279,14 +279,14 @@ The Raider-vs-route contest (combat spec §6.3) uses terrain to flip odds:
 - **Determinism:** `safe_route` tie-break by `TileId`; no RNG in route math (path is
   deterministic given the map + ownership). Raid *contests* may draw RNG (combat spec) but never route *establishment*.
 - **Self-loop / same city:** `ConnectRoute` with `from==to` rejected.
-- **Both endpoints self-sufficient (both WellFort/oases):** Water transfer = 0, but full Wealth still flows.
+- **Both endpoints self-sufficient (both Well Fort/oases):** Water transfer = 0, but full Wealth still flows.
 
 ## 8. Acceptance Criteria / Unit-Test Checklist
 
 - [ ] `safe_route` returns inclusive path; avoids enemy tiles; prefers safe corridors; deterministic (fixed seed ⇒ identical path).
 - [ ] `preview_cost` matches `5 + path.len()*1`.
 - [ ] `ConnectRoute` spends correct Wealth, decrements both endpoints' slots, stores `Active` route with `upkeep=1`.
-- [ ] Route Wealth = floor((2 + trade + dist + market) × (1.5 if TradeHub) × synergy).
+- [ ] Route Wealth = floor((2 + trade + dist + market) × (1.5 if Trade Hub) × synergy).
 - [ ] Synergy: 2 cities ×1.0, 3 cities ×1.10, 4 cities ×1.20.
 - [ ] Water transfer delivers +2 only to a non-self-sufficient sink; both self-sufficient ⇒ 0.
 - [ ] Threatened ⇒ Wealth halved; Severed ⇒ 0 Wealth & 0 Water.
@@ -302,7 +302,7 @@ The Raider-vs-route contest (combat spec §6.3) uses terrain to flip odds:
 - Design: DD §8 (signature system) — §8.1 what a route is, §8.2 establish/auto-route, §8.3 yields, §8.4 vulnerability/defense/terrain, §8.5 upkeep/network/isolation, §8.6 why routes beat oases, §8.7 diplomacy (stretch).
 - Architecture: ARCH §4.3 (threat-weighted Dijkstra / `safe_route`), §5.2/`ConnectRoute`, §15 (caravan module).
 - ADRs: ADR-0004 (Command-only), ADR-0005 (axial hex in-core, Dijkstra), ADR-0003 (pure core).
-- Related specs: `gameplay-resources-economy.md` (applies yields, isolation, upkeep), `gameplay-cities.md` (route_slots, WellFort water supply, TradeHub/Caravanserai bonuses), `gameplay-units-movement.md` (`RaidRoute`, `Patrol`/control), `gameplay-combat.md` (raid contest resolution, terrain mods), `foundation-core-data-model.md` (`CaravanRoute`), `foundation-turn-engine.md` (`RouteCreated`/`RouteRaided`, `recompute_routes` call site), `foundation-hex-grid-math.md` (`distance`, `ring`, Dijkstra).
+- Related specs: `gameplay-resources-economy.md` (applies yields, isolation, upkeep), `gameplay-cities.md` (route_slots, Well Fort water supply, Trade Hub/Caravanserai bonuses), `gameplay-units-movement.md` (`RaidRoute`, `Patrol`/control), `gameplay-combat.md` (raid contest resolution, terrain mods), `gameplay-fog-of-war.md` (fog-of-war constraints on route planning, `ConnectRoute` reject on unexplored tiles; see fog-of-war spec §6.3), `foundation-core-data-model.md` (`CaravanRoute`), `foundation-turn-engine.md` (`RouteCreated`/`RouteRaided`, `recompute_routes` call site), `foundation-hex-grid-math.md` (`distance`, `ring`, Dijkstra).
 
 ## 10. Open Questions (carried, not resolved)
 

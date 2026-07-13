@@ -106,7 +106,7 @@ Base weight tables (first-pass, tunable — DD §18 OQ-1 analogue for AI):
 Difficulty multiplies the *greed/competence* axis, not the personality:
 
 ```
-Easy   = command_budget 4,  lookahead 0, security*0.4, route*0.7, preemptive_raid=false, defend_core_routes=false
+Easy   = command_budget 4,  lookahead 0, security*0.4, route*0.7, preemptive_raid=false, defend_core_routes=false, morale=1.0 (default; no morale-based modifiers, DD §11.3)
 Normal = command_budget 7,  lookahead 1, (weights as-is),        preemptive_raid=false, defend_core_routes=true
 Hard   = command_budget 10, lookahead 2, security*1.2, raid*1.2,  preemptive_raid=true,  defend_core_routes=true
 ```
@@ -192,15 +192,15 @@ fn ai_plan(state, player, difficulty) -> Vec<Command> {
 
 - For each own city with `building_slots` free and affordable Wealth, emit `Build`
   for the building that best fits the city's intended role:
-  - **WellFort role** → `Well` (water), then `Granary` (cap); if `population >= 3`
+  - **Well Fort role** → `Well` (water), then `Granary` (cap); if `population >= 3`
     and no specialization yet, `Specialize { spec: WellFort }`.
-  - **TradeHub role** → `Market` (route wealth), `Caravanserai` (+slot/−upkeep);
+  - **Trade Hub role** → `Market` (route wealth), `Caravanserai` (+slot/−upkeep);
     `Specialize { spec: TradeHub }` once eligible.
   - **Fortress role** → `Watchtower` (def/fog), `Specialize { spec: Fortress }`.
   - **Scholar role** → `Temple` (influence), `Specialize { spec: ScholarOutpost }`.
-- Role assignment is heuristic: the first city is typically WellFort (survival), the
-  second TradeHub (economy), and one Fortress if any enemy is visible; Trader
-  personalities over-index on TradeHub, Fortifier on Fortress, etc.
+- Role assignment is heuristic: the first city is typically Well Fort (survival), the
+  second Trade Hub (economy), and one Fortress if any enemy is visible; Trader
+  personalities over-index on Trade Hub, Fortifier on Fortress, etc.
 
 ### 6.4 Route network planning & defense (SIGNATURE — mandatory route awareness)
 
@@ -282,7 +282,7 @@ This is the make-or-break area (DD §18 OQ-7). The AI treats routes as primary:
 - [ ] AI emits `Patrol` for an exposed/threatened own route under Normal/Hard (`defend_core_routes`), and mostly skips it under Easy (OQ-7 stress test).
 - [ ] AI never references an enemy unit whose tile is not in its `discovered` set (no-cheat test: plant a hidden enemy, assert it is not targeted).
 - [ ] AI prefers founding on an unowned visible oasis; spends Influence only if `>= 10`.
-- [ ] AI specializes cities once `population >= 3`: at least one WellFort + one TradeHub appear for non-Raider personalities.
+- [ ] AI specializes cities once `population >= 3`: at least one Well Fort + one Trade Hub appear for non-Raider personalities.
 - [ ] Hard AI emits `RaidRoute` on the enemy's weakest-link route when a Raider can reach it; Easy does not prioritize pre-emptive raids.
 - [ ] Every emitted `Command` passes `validate(state, &cmd)` for the current actor.
 - [ ] `command_budget` is never exceeded.
@@ -296,7 +296,7 @@ This is the make-or-break area (DD §18 OQ-7). The AI treats routes as primary:
 - ADRs: ADR-0003 (pure core — AI is core, deterministic), ADR-0004 (Command-only; same enum as human ⇒ no cheat), ADR-0006 (RNG lives in state; AI draws only `state.rng`).
 - Related specs: `gameplay-fog-of-war.md` (visibility queries the AI must use), `gameplay-caravan-routes.md` (`safe_route`, `is_route_tile_controlled`, `network_synergy`, `connected_city_count`, route state), `gameplay-cities.md` (`FoundCity`, `Specialize`, `building_slots`), `gameplay-units-movement.md` (training cap, `Patrol`/`RaidRoute`/`RaidCity`), `gameplay-resources-economy.md` (`is_city_isolated`), `foundation-core-data-model.md` (`PlayerKind`, `Difficulty`, `AiPersonality`), `foundation-turn-engine.md` (`Command`/`EndTurn`, `validate`), `foundation-scenario-config.md` (personalities per player).
 
-## Extensibility — `ai_plan` as the stable extension point
+### 9.1 Extensibility — `ai_plan` as the stable extension point
 
 `ai_plan(state, player, difficulty) -> Vec<Command>` is the single, **stable
 extension point** for all AI evolution. Because it is a **pure, fog-aware** function

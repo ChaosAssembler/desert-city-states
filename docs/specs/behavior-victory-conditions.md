@@ -13,8 +13,9 @@
 Specify the three victory types from DD §13, the **`VictoryTracker`** that lives in
 `GameState` and is updated every end-of-turn, the concrete thresholds (read from
 `ScenarioConfig`, scaled down for small maps / 2 players), the **prestige score
-formula** for V2 (generalized from DD §13's `Wealth×1 + Influence×2` proposal to also
-reward territory and routes — the economic spine of "routes > oases"), the **turn-limit
+formula** for V2 (implementing DD §13's `Score = Wealth×1 + Influence×2 + oases×8 +
+active_routes×4` proposal, which already rewards territory and routes — the economic
+spine of "routes > oases"), the **turn-limit
 fallback** (highest score wins), and elimination as an instant win. All checks run
 through the turn engine's `advance_turn` (ADR-0004) — the victory module never mutates
 except updating the tracker it owns.
@@ -56,7 +57,7 @@ Reuses `VictoryTracker` (core-data-model §4.11) and `VictoryKind` (§4.10). No 
 entity types; adds only **prestige-score balance weights** (tunable — DD §18 OQ-1):
 
 ```rust
-// Prestige score weights (DD §13 generalized — see §6.2). Tunable tables.
+// Prestige score weights (DD §13 — see §6.2). Tunable tables.
 pub const PRESTIGE_WEALTH_W:      f32 = 1.0;  // Wealth stockpile weight
 pub const PRESTIGE_INFLUENCE_W:   f32 = 2.0;  // Influence stockpile weight
 pub const PRESTIGE_OASIS_W:       f32 = 8.0;  // each controlled oasis (territory)
@@ -82,7 +83,7 @@ pub struct VictoryTracker {
 ```
 
 > Note: `Relic.consecutive_turns_held` (core-data-model §4.8) is the per-relic hold
-> counter incremented in `advance_turn` (turn-engine §6.3 step 7); `VictoryTracker`
+> counter incremented in `advance_turn` (turn-engine §6.3 step 1); `VictoryTracker`
 > mirrors current holders for fast win-checking. Both derive from the same source.
 
 ## 5. Key Functions / API
@@ -126,17 +127,16 @@ For each **living** (`!defeated`) player `p`:
    `relic_timers[relic.id] = p`; clear entries for relics no longer held by `p`.
 
 `Relic.consecutive_turns_held` is incremented in the turn engine's relic step
-(turn-engine §6.3 step 7): a relic held by `p` this turn ⇒ `+1`; a relic whose holder
+(turn-engine §6.3 step 1): a relic held by `p` this turn ⇒ `+1`; a relic whose holder
 changed or is `None` ⇒ reset to `0`.
 
-### 6.2 Prestige score formula (V2 + fallback) — DD §13 generalized
+### 6.2 Prestige score formula (V2 + fallback) — DD §13
 
-DD §13 proposes `Score = Wealth×1 + Influence×2` (target 200). This spec **generalizes**
-that proposal to also reward the economic spine — **territory (oases) and the active
-route network** — because those are the mechanical expression of "routes > oases"
-(DD §8.6) and the task requires the score to derive from Wealth/Influence/territory/
-routes. The design's `Wealth×1+Influence×2` is the **stockpile core** of this formula;
-the generalization keeps those exact weights and adds territory + route terms:
+DD §13 proposes `Score = Wealth×1 + Influence×2 + oases×8 + active_routes×4`
+(target 200). This spec **implements** that proposal as-is: the stockpile terms
+(Wealth × 1, Influence × 2) capture empire reserves while the territory term
+(oases × 8) and the route-network term (active routes × 4) express the economic
+spine of "routes > oases" (DD §8.6). The weights below match the DD exactly:
 
 ```
 prestige_score(p) = floor(
@@ -152,15 +152,15 @@ where `active_routes(p)` = count of `CaravanRoute` owned by `p` with `status == 
 `Influence(p)` are the player's empire stockpiles (`Player.resources`).
 
 The **win threshold** is `scenario.wealth_score_target` (default 200; scaled per
-scenario-config §6.2). Because territory + routes now add to the score, the default
-200 from DD §13 still applies as the raw target and remains tunable; the weights are
+scenario-config §6.2). The default 200 from DD §13 applies as the raw target and
+remains tunable; the weights are
 first-pass (DD §18 OQ-1). A player wins V2 when `prestige_score(p) >=
 wealth_score_target`.
 
-> Consistency note: this does not contradict DD §13 — DD §13 explicitly marks the
-> `Wealth×1+Influence×2` figure a *proposal*, and the V2 meter is "visible to all".
-> The generalized formula is the implementation of that proposal; if a designer wants
-> the literal stockpiles-only version, set `PRESTIGE_OASIS_W = PRESTIGE_ROUTE_W = 0`.
+> Consistency note: this matches DD §13 — DD §13 proposes the full formula
+> `Score = Wealth×1 + Influence×2 + oases×8 + active_routes×4`, and the V2 meter is
+> "visible to all". The weights are first-pass (DD §18 OQ-1) and tunable; if a
+> designer wants a stockpiles-only version, set `PRESTIGE_OASIS_W = PRESTIGE_ROUTE_W = 0`.
 
 ### 6.3 V1 — Oasis Dominance
 
@@ -262,19 +262,20 @@ except the tracker write they own; no RNG is drawn (deterministic).
 
 ## 9. References
 
-- Design: DD §13 (Victory Conditions) — V1 oasis majority, V2 score (Wealth×1+Influence×2, target 200), V3 relic hold, threshold scaling, turn-limit fallback + tiebreak, MVP ships V1 only but meters built for all three.
+- Design: DD §13 (Victory Conditions) — V1 oasis majority, V2 score (Wealth×1+Influence×2+oases×8+active_routes×4, target 200), V3 relic hold, threshold scaling, turn-limit fallback + tiebreak, MVP ships V1 only but meters built for all three.
 - Architecture: ARCH §13 (Victory Tracking — `VictoryTracker`, the three meters, fallback), §3.1 (`GameState.victory`), §5.3 (victory check at `advance_turn`), §11 (`ScenarioConfig` thresholds).
 - ADRs: ADR-0003 (pure core), ADR-0004 (victory check runs inside the resolver's `advance_turn`), ADR-0006 (determinism — no RNG in victory).
-- Related specs: `foundation-scenario-config.md` (`oasis_majority_pct`, `wealth_score_target`, `relic_count`, `relic_hold_turns`, `turn_limit`, `scale_thresholds`), `foundation-core-data-model.md` (`VictoryTracker`, `VictoryKind`, `Relic`, `Player.resources`), `foundation-turn-engine.md` (`advance_turn` step 7/8, `Victory` event, loop stop), `gameplay-caravan-routes.md` (`RouteStatus::Active` for V2 route count), `gameplay-fog-of-war.md` (relic sites revealed once seen).
+- Related specs: `foundation-scenario-config.md` (`oasis_majority_pct`, `wealth_score_target`, `relic_count`, `relic_hold_turns`, `turn_limit`, `scale_thresholds`), `foundation-core-data-model.md` (`VictoryTracker`, `VictoryKind`, `Relic`, `Player.resources`), `foundation-turn-engine.md` (`advance_turn` step 1/2, `Victory` event, loop stop), `gameplay-caravan-routes.md` (`RouteStatus::Active` for V2 route count), `gameplay-fog-of-war.md` (relic sites revealed once seen).
 
 ## 10. Open Questions (carried, not resolved)
 
 - **DD #3 / OQ-1:** prestige-score weights (`PRESTIGE_OASIS_W`, `PRESTIGE_ROUTE_W`,
-  and the `wealth_score_target` interaction) are first-pass; tunable. The design's
-  literal `Wealth×1+Influence×2` is recoverable by zeroing the territory/route terms.
-- **V2 formula scope:** this spec generalizes DD §13's proposal to include territory +
-  routes (per the task). If the design team prefers the literal stockpiles-only score,
-  it is a one-line table change — flagged here, not a contradiction.
+  and the `wealth_score_target` interaction) are first-pass; tunable. The DD's full
+  formula `Wealth×1+Influence×2+oases×8+active_routes×4` is used; stockpiles-only is
+  recoverable by zeroing the territory/route terms.
+- **V2 formula scope:** this spec implements DD §13's full formula including territory +
+  routes. If the design team prefers a stockpiles-only score, it is a one-line table
+  change — flagged here, not a contradiction.
 - **`VictoryKind::TurnLimit` variant — RESOLVED:** the distinct
   `VictoryKind::TurnLimit` variant now exists in the core data model
   (foundation-core-data-model.md §4.10). The fallback winner determination (highest

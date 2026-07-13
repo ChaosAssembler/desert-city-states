@@ -1,10 +1,11 @@
-# 0005-axial-hex-in-core
-
-## Title
-Axial hex coordinates, implemented in-core
+# ADR-0005: Axial hex coordinates, implemented in-core
 
 ## Status
 Accepted
+
+## Date
+
+2025-01-01
 
 ## Context
 The game uses a **pointy-top hex grid** (DD §5.1). We need a small, stable set of coordinate operations — conversions to cube/pixel, neighbors, distance, rings/ranges, line-draw, and A*/Dijkstra pathfinding — and these operations must be perfectly deterministic because they feed map generation, movement, route planning, and serialized saves/replays.
