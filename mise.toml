@@ -2,8 +2,8 @@
 # Run tasks with: `mise run <task>` (e.g. `mise run build`, `mise run purity`)
 
 [tools]
-# Pinned stable Rust toolchain (bundles cargo, rustc, clippy, rustfmt).
-rust = "1.97.0"
+markdownlint-cli2 = "0.23.0"
+tombi = "1.1.7"
 
 [tasks.build]
 description = "Build the entire Cargo workspace"
