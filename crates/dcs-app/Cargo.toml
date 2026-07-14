@@ -1,0 +1,11 @@
+[package]
+name = "dcs-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Glue crate wiring core, protocol, and render for Desert City-States"
+
+[dependencies]
+dcs-core = { path = "../dcs-core" }
+dcs-protocol = { path = "../dcs-protocol" }
+dcs-render = { path = "../dcs-render" }

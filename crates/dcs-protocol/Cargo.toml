@@ -1,0 +1,9 @@
+[package]
+name = "dcs-protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Shared Command/GameEvent/VersionedSave contract surface for Desert City-States"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

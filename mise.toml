@@ -1,0 +1,30 @@
+# mise.toml — Dev tooling for Desert City-States
+# Run tasks with: `mise run <task>` (e.g. `mise run build`, `mise run purity`)
+
+[tools]
+# Pinned stable Rust toolchain (bundles cargo, rustc, clippy, rustfmt).
+rust = "1.97.0"
+
+[tasks.build]
+description = "Build the entire Cargo workspace"
+run = "cargo build --workspace"
+
+[tasks.test]
+description = "Run all workspace tests"
+run = "cargo test --workspace"
+
+[tasks.tree]
+description = "Show the dependency tree of the pure core crate"
+run = "cargo tree -p dcs-core"
+
+[tasks.fmt]
+description = "Format all code with rustfmt"
+run = "cargo fmt --all"
+
+[tasks.check]
+description = "Lint the workspace with clippy, treating warnings as errors"
+run = "cargo clippy --workspace -- -D warnings"
+
+[tasks.purity]
+description = "Fail if dcs-core pulls in macroquad / dcs-render / dcs-app (forbidden edges)"
+run = "cargo tree -p dcs-core | grep -qE 'macroquad|dcs-render|dcs-app' && { echo 'FORBIDDEN EDGE: dcs-core must not depend on macroquad/dcs-render/dcs-app'; exit 1; } || true"

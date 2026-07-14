@@ -1,0 +1,9 @@
+[package]
+name = "dcs-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Pure deterministic simulation core for Desert City-States"
+
+[dependencies]
+dcs-protocol = { path = "../dcs-protocol" }

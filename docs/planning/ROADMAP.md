@@ -42,7 +42,7 @@ and **does exist** under `docs/specs/`. Phase 1 implements its module
 
 ## Phase 0 — Workspace scaffold
 
-- [~] **In progress (next milestone)**
+- [x] **Done**
 
 ### Goal
 Establish the Cargo workspace with the four member crates and the mechanical
@@ -76,15 +76,17 @@ boundaries rather than convention.
 - None (first milestone).
 
 ### Exit / Definition of Done
-- [ ] `cargo build --workspace` succeeds with four empty crates.
-- [ ] `cargo tree -p dcs-core` shows **no** macroquad / `dcs-render` / `dcs-app`
+- [x] `cargo build --workspace` succeeds with four empty crates.
+- [x] `cargo tree -p dcs-core` shows **no** macroquad / `dcs-render` / `dcs-app`
   edges (CI gate green).
-- [ ] `dcs-core` depends only on `dcs-protocol` + std/serde/rand-family crates.
-- [ ] Dev can run `mise run <task>` (or cargo equivalents) for build/test/tree.
+- [x] `dcs-core` depends only on `dcs-protocol` + std/serde/rand-family crates.
+- [x] Dev can run `mise run <task>` (or cargo equivalents) for build/test/tree.
 
 ---
 
 ## Phase 1 — Foundation (dcs-core)
+
+- [~] **In progress (next milestone)**
 
 ### Goal
 Implement the deterministic, serializable simulation core: the data model,

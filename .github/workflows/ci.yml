@@ -1,0 +1,87 @@
+# CI workflow for Desert City-States — Phase 0
+#
+# Mirrors the project's local cargo verification (build, engine-purity gate,
+# formatting, lint, test) so CI and the local `cargo` checks stay in lockstep.
+#
+# Triggers: push / pull_request to the default branch `main`
+# (`main` is confirmed as the repo's default branch via .git/HEAD and
+# .git/config — local `main` tracks `origin/main`).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least-privilege: the workflow only needs to read the source tree.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  verify:
+    name: Verify (build, purity gate, fmt, clippy, test)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Install the stable Rust toolchain with clippy + rustfmt components.
+      # The action ref is pinned to the commit that currently tracks the
+      # `stable` channel (dated 2026-06-30). Bump this SHA when intentionally
+      # moving to a newer stable toolchain; the Rust channel itself is `stable`.
+      - name: Install stable Rust toolchain (clippy + rustfmt)
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Build workspace
+        # The whole Cargo workspace must build. At Phase 0 these are four empty
+        # crate skeletons, but this keeps the gate real for later phases.
+        run: cargo build --workspace
+
+      # ----------------------------------------------------------------------
+      # Core purity gate (ADR-0003 / ARCH §16)
+      #
+      # `dcs-core` must stay engine-free: it may depend only on `dcs-protocol`
+      # (+ std / serde / rand-family) and must NEVER pull in `macroquad`,
+      # `dcs-render`, or `dcs-app`. This step fails the job if any forbidden
+      # crate appears anywhere in `cargo tree -p dcs-core`. At Phase 0 the tree
+      # contains only dcs-protocol/serde, so it passes trivially — but it is a
+      # real, reusable mechanical enforcer for every later phase.
+      # ----------------------------------------------------------------------
+      - name: dcs-core engine-purity gate
+        run: |
+          set -euo pipefail
+          # Compute the tree once. If `cargo tree` itself fails (set -e aborts
+          # the step), we fail CLOSED rather than reporting a false pass.
+          echo "::group::cargo tree -p dcs-core"
+          cargo tree -p dcs-core -e normal,build,dev > /tmp/dcs_core_tree.txt
+          cat /tmp/dcs_core_tree.txt
+          echo "::endgroup::"
+
+          # Fail the job if any forbidden crate appears in dcs-core's tree.
+          if grep -qE '\b(macroquad|dcs-render|dcs-app)\b' /tmp/dcs_core_tree.txt; then
+            echo "::error::dcs-core must not depend on macroquad, dcs-render, or dcs-app (ADR-0003)."
+            echo "::error::Forbidden dependency edge(s) found in 'cargo tree -p dcs-core':"
+            grep -E '\b(macroquad|dcs-render|dcs-app)\b' /tmp/dcs_core_tree.txt
+            exit 1
+          fi
+          echo "Purity gate passed: dcs-core is engine-free."
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Test
+        # Runs the workspace test suites. At Phase 0 there are no tests yet,
+        # but this keeps CI in lockstep with the local verification path.
+        run: cargo test --workspace
