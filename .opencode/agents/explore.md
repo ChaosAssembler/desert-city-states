@@ -6,17 +6,12 @@ permission:
   glob: allow
   grep: allow
   bash:
-    "find *": allow
-    "ls *": allow
-    "du *": allow
     "cargo metadata *": allow
     "cargo tree *": allow
     "git log *": allow
     "git show *": allow
     "git diff *": allow
     "git grep *": allow
-    "rg *": allow
-    "fd *": allow
   skill:
     subagent-autonomy: allow
 ---
