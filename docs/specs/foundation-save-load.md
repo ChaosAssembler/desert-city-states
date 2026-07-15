@@ -96,7 +96,7 @@ pub fn save_debug(state: &GameState, path: &Path) -> Result<(), SaveError> { sav
 `GameState::version` (and `VersionedSave::version`) tracks schema. On
 `deserialize`:
 
-```
+```rust
 let env: VersionedSave<...> = match fmt {
     Json    => serde_json::from_slice(bytes)?,
     Postcard=> postcard::from_bytes(bytes)?,

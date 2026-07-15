@@ -85,3 +85,24 @@ jobs:
         # Runs the workspace test suites. At Phase 0 there are no tests yet,
         # but this keeps CI in lockstep with the local verification path.
         run: cargo test --workspace
+
+      # ----------------------------------------------------------------------
+      # Documentation lint (mirrors the local `mise run lint-md` task)
+      #
+      # `jdx/mise-action` installs the dev tools declared in mise.toml —
+      # markdownlint-cli2@0.23.0 (and tombi) — so CI uses the exact same tool
+      # and version the local task uses. This does NOT install Rust (Rust is
+      # not in mise.toml's [tools]) and does not interfere with the dtolnay
+      # Rust toolchain used by the cargo steps above. The repo-root
+      # .markdownlint.json is auto-loaded by markdownlint-cli2.
+      # ----------------------------------------------------------------------
+      - name: Install mise-managed dev tools
+        uses: jdx/mise-action@v4
+        with:
+          install: true
+
+      - name: Lint documentation (markdownlint-cli2)
+        # Mirror of the local `mise run lint-md` task: same tool
+        # (markdownlint-cli2 0.23.0, installed via mise above), same glob
+        # (docs/**/*.md), same repo-root .markdownlint.json config.
+        run: mise run lint-md

@@ -6,7 +6,7 @@
 > **Theme:** Rival oasis city-states in a harsh desert
 > **Platform:** Browser/PC, turn-based
 > **Rendering decision (confirmed):** 2D **graphical** rendering (not terminal/TUI). Presentation guidance below is written for 2D, but the underlying design is kept engine-agnostic so the eventual architecture can swap renderers/backends.
-> **Single source of truth:** This document defines *what* the game is. The future `docs/architecture/` (software architecture) and `docs/architecture/decisions/` (ADRs) will define *how* it is built. Later phases: per-system technical specs and a phased roadmap.
+> **Single source of truth:** This document defines *what* the game is. Companion docs define how it is built: `docs/architecture/` (ARCHITECTURE.md), `docs/architecture/decisions/` (8 ADRs, 0001–0008), `docs/specs/` (15 per-system technical specs), and `docs/planning/` (ROADMAP.md).
 
 ---
 
@@ -304,9 +304,9 @@ A route tile is **controlled** if it is within your territory (worked ring / zon
 
 - Each route costs **Water upkeep** (proposal: 1/turn) drawn from the network pool — long disconnected empires bleed Water.
 - **Network effects (proposal):**
-  - **Redundancy:** if two cities have 2+ independent routes, losing one does not Sever the link.
-  - **Synergy:** each additional connected city adds +10% Wealth to *all* routes in the network (economy of scale) — rewards building a web, not spokes.
-  - **Isolation penalty:** a city with **zero active routes** to the rest of your network suffers −2 Water/turn (starvation risk) even if it sits on an oasis — *this is the core "routes > oases" rule made mechanical.*
+- **Redundancy:** if two cities have 2+ independent routes, losing one does not Sever the link.
+- **Synergy:** each additional connected city adds +10% Wealth to *all* routes in the network (economy of scale) — rewards building a web, not spokes.
+- **Isolation penalty:** a city with **zero active routes** to the rest of your network suffers −2 Water/turn (starvation risk) even if it sits on an oasis — *this is the core "routes > oases" rule made mechanical.*
 
 ### 8.6 Why Routes Beat Oases (design summary)
 
@@ -362,12 +362,14 @@ Each unit has: **Move** (hexes/turn), **Attack**, **Defense**, **HP**, **Upkeep*
 Combat is **automatic** (player sets intent via unit positioning/orders; resolution is deterministic-ish with a dice roll). No manual tactical battles — keeps turns short and matches the "legible board" pillar.
 
 **Resolution formula (proposal):**
-```
+
+```text
 attack_power  = Atk * atk_pos           // morale = 1.0 (MVP off); atk_pos encodes attacker positioning (flank ×1.25 / Salt-Flats-exposed ×0.90)
 defense_power = Def * (1 + terrain_def) // terrain_def applies to the *defender's* tile only (Section 10.2); defender positional factor = 1.0
 odds = attack_power / (attack_power + defense_power)
 result: roll → apply HP loss; loser retreats or is destroyed.
 ```
+
 - **Positioning factor (`atk_pos`):** the attacker's tile effects are folded into `atk_pos`, *not* a separate defense/terrain multiplier. Attacking from a **flank/tile with advantage** (e.g., from Ridge onto Dune) gives ×1.25; attacking **from Salt Flats** (exposed) gives ×0.90. *Attacker choice of approach tile matters → positioning > numbers.* The only terrain term is the defender's tile `terrain_def` (Section 10.2); there is no attacker terrain-atk modifier.
 
 ### 10.2 Terrain Modifiers
@@ -463,21 +465,27 @@ All three from the original doc, now with **concrete thresholds** (proposals) an
 ## 15. Content Catalogs (Consolidated)
 
 ### 15.1 Tile Types
+
 Oasis · Dunes · Salt Flats · Ridges · Ruins (subset = Relic Sites).
 
 ### 15.2 Buildings / Improvements
+
 Well · Market · Granary · Watchtower · Caravanserai · Temple.
 
 ### 15.3 Units
+
 Scout · Caravan Guard · Raider.
 
 ### 15.4 City Specializations
+
 Trade Hub · Well Fort · Fortress · Scholar Outpost.
 
 ### 15.5 Relics / Ruins Rewards (proposal)
+
 Wealth cache · Influence burst · Free building · Relic Site (victory).
 
 ### 15.6 Victory Conditions
+
 V1 Oasis Dominance · V2 Wealth/Prestige Score · V3 Relic Hold.
 
 ---
@@ -543,11 +551,11 @@ MVP = small map, fog, 3 resources, 3 units, 1 generic city + simple upgrades, ca
 4. **Can a Scout found a city, or do we need a dedicated Founder unit?** Chose Scout-for-now to limit unit count; revisit if founding feels cheap. ⚠ Still open.
 5. ✅ **RESOLVED — Relic Sites scaling:** Relic/win thresholds and turn limits are **configurable and scale with map size & player count** (e.g., relic count and hold-duration scale down for 2-player / small maps). Tuning deferred to playtest. Recorded in Sections 13 and 16.2.
 6. **Raids resolution order:** with sequential turns, a defined rule is still needed for which actor's raid resolves first when a contested route tile is targeted within the same overall turn cycle — address in Phase 2. ⚠ Still open.
-7. **AI route-defense competence** is the make-or-break of the signature mechanic feeling real — risk that AI ignores routes and the fantasy falls flat. Mitigation: bake route-security into AI utility weights (Section 11.2). ⚠ Still open.
+7. ✅ **RESOLVED — AI route-defense competence:** AI route defense decided: Easy defends a bit, less reliably; Normal/Hard cover core routes reliably. Recorded in Section 11.3.
 8. ✅ **RESOLVED — Rendering engine:** Rendering engine = **macroquad** (2D graphical, immediate-mode). Confirmed in Phase 2 architecture.
 9. ✅ **RESOLVED — Session length vs. map size:** Turn count and map size are **fully configurable** scenario options; design targets a range and tunes via playtest rather than hard-coding (default ~30–60 min). Recorded in Sections 5.2, 13, 16.2.
 10. **Single-screen "friendly" vs. zoom/pan:** original says single-screen; full scope implies pan. Proposal: MVP single-screen radius 4, full scope zoom/pan. Confirm acceptable. ⚠ Still open.
 
 ---
 
-*End of Document — Draft v1.0. Forward references: `docs/architecture/` (to be created, Phase 2) and `docs/architecture/decisions/` (ADRs, Phase 2). Per-system technical specs and the phased roadmap are planned subsequent phases.*
+*End of Document — Draft v1.0. Companion docs: `docs/architecture/` (ARCHITECTURE.md), `docs/architecture/decisions/` (8 ADRs 0001–0008), `docs/specs/` (15 per-system specs), and `docs/planning/` (ROADMAP.md).*

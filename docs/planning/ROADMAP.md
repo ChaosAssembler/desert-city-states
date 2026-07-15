@@ -1,6 +1,6 @@
 # Desert City States — Implementation Roadmap
 
-> **Status:** Phase 4 — phased implementation plan (final planning deliverable)
+> **Status:** Planning doc 4 of 4 — phased implementation plan. Implementation status: Phase 0 complete, Phase 1 next.
 > **Source of truth for behavior:** `docs/design/Desert-City-States.md` (DD)
 > **Architecture:** `docs/architecture/ARCHITECTURE.md` + `docs/architecture/decisions/` (ADR-0001…0008)
 > **Specs (binding):** `docs/specs/README.md` and the 15 spec files
@@ -45,11 +45,13 @@ and **does exist** under `docs/specs/`. Phase 1 implements its module
 - [x] **Done**
 
 ### Goal
+
 Establish the Cargo workspace with the four member crates and the mechanical
 guards that keep `dcs-core` engine-free, so all later phases build on enforced
 boundaries rather than convention.
 
 ### In scope
+
 - Virtual workspace manifest at repo root with members `crates/dcs-core`,
   `crates/dcs-protocol`, `crates/dcs-render`, `crates/dcs-app` (ADR-0008, ARCH §2.1).
 - `dcs-protocol` defined as the shared `Command`/`GameEvent`/`VersionedSave`
@@ -61,10 +63,12 @@ boundaries rather than convention.
   `--headless` smoke hook cited by ARCH §16 can be wired now or in Phase 1.
 
 ### Out of scope
+
 - Any game logic, types, or rendering (Phase 1+).
 - Choosing the PRNG crate or save format (decided Phase 1).
 
 ### Key deliverables
+
 - Repo root `Cargo.toml` (virtual) + four crate skeletons (no sim code).
 - `crates/dcs-protocol/Cargo.toml` declaring serde dependency.
 - CI workflow running `cargo build --workspace` and `cargo tree -p dcs-core`
@@ -73,9 +77,11 @@ boundaries rather than convention.
   leaves `mise.local.toml` ignored.
 
 ### Dependencies
+
 - None (first milestone).
 
 ### Exit / Definition of Done
+
 - [x] `cargo build --workspace` succeeds with four empty crates.
 - [x] `cargo tree -p dcs-core` shows **no** macroquad / `dcs-render` / `dcs-app`
   edges (CI gate green).
@@ -89,12 +95,14 @@ boundaries rather than convention.
 - [~] **In progress (next milestone)**
 
 ### Goal
+
 Implement the deterministic, serializable simulation core: the data model,
 hex math, scenario config, world generation, the turn engine (Command/Event
 resolver + sequential phase machine), and save/load — enough to generate a map
 from a seed, step turns headlessly, and round-trip state. Heavy unit testing.
 
 ### In scope
+
 - **Implement the hex spec module** from `foundation-hex-grid-math.md` (exists
   under `docs/specs/`; from ARCH §4 + ADR-0005) → `dcs-core::hex` (axial
   `(q,r,s=-q-r)`,
@@ -117,11 +125,13 @@ from a seed, step turns headlessly, and round-trip state. Heavy unit testing.
   registry, `load` auto-detect by extension (save-load spec §4–§6).
 
 ### Out of scope
+
 - Gameplay *logic* (economy/cities/units/combat/caravan) — stubbed in the
   resolver, filled in Phase 2.
 - AI, victory checks (Phase 3), rendering (Phase 4).
 
 ### Key deliverables (spec → module)
+
 - [ ] `docs/specs/foundation-hex-grid-math.md` **present** (gap closed) → `dcs-core::hex`
 - [ ] `docs/specs/foundation-core-data-model.md` → `dcs-core::model`
 - [ ] `docs/specs/foundation-scenario-config.md` → `dcs-core::scenario`
@@ -132,9 +142,11 @@ from a seed, step turns headlessly, and round-trip state. Heavy unit testing.
 - [ ] `dcs-protocol` crate → `Command`/`GameEvent`/`VersionedSave` (ADR-0004/0007)
 
 ### Dependencies
+
 - Phase 0 (workspace + CI gate).
 
 ### Open questions resolved in this phase
+
 - **PRNG crate (ARCH OQ-6):** choose `nanorand` vs `rand::StdRng`; recommend
   `nanorand` (ADR-0006). The RNG state lives in `GameState` and serializes.
 - **Save format (ARCH OQ-5):** default **json for dev**, **postcard for ship**,
@@ -144,6 +156,7 @@ from a seed, step turns headlessly, and round-trip state. Heavy unit testing.
   Final *design sign-off* is validated in Phase 5 playtest.
 
 ### Exit / Definition of Done
+
 - [ ] `new_game(scenario, seed)` is deterministic: `==` deep-equal for equal
   inputs; different seed → different valid map (world-gen spec §8).
 - [ ] `step(state, [EndTurn])` cycles actors and `advance_turn` increments
@@ -162,11 +175,13 @@ from a seed, step turns headlessly, and round-trip state. Heavy unit testing.
 ## Phase 2 — Gameplay systems (dcs-core)
 
 ### Goal
+
 Implement the six gameplay modules that plug into the Phase 1 resolver so a
 **full headless simulation of the core loop** works: resources/economy, cities,
 units/movement, combat, fog of war, and the signature caravan/route system.
 
 ### In scope
+
 - `dcs-core::fog` — visibility model, reveal sources/radii, reveal triggers,
   queries, serialization (fog-of-war spec §4–§6).
 - `dcs-core::world` (cities + units entities) — `FoundCity` (Scout can found,
@@ -185,9 +200,11 @@ units/movement, combat, fog of war, and the signature caravan/route system.
   (resources-economy spec §5–§6); wire into `advance_turn`.
 
 ### Out of scope
+
 - AI decisions (Phase 3), victory thresholds (Phase 3), rendering (Phase 4).
 
 ### Key deliverables (spec → module), in dependency order
+
 - [ ] `docs/specs/gameplay-fog-of-war.md` → `dcs-core::fog` (needed by units reveal + caravan fog rule)
 - [ ] `docs/specs/gameplay-cities.md` → `dcs-core::world` (FoundCity/Build/Specialize/Train) — **sets DD #4 default**
 - [ ] `docs/specs/gameplay-units-movement.md` → `dcs-core::world` (A*, MoveUnit, Patrol, Raid*)
@@ -196,9 +213,11 @@ units/movement, combat, fog of war, and the signature caravan/route system.
 - [ ] `docs/specs/gameplay-resources-economy.md` → `dcs-core::economy` (income/upkeep/isolation/starvation)
 
 ### Dependencies
+
 - Phase 1 (data model, hex math, turn engine, scenario, save/load, `dcs-protocol`).
 
 ### Open questions resolved / validated in this phase
+
 - **DD #4 Scout-founding (OQ-2):** lock the recommended default — `is_founding_unit(Scout)==true`
   (cities spec §6.1). A `Founder` kind remains a later one-predicate flip.
 - **Route planning through fog (fog spec §6.3):** implement the specified default —
@@ -209,6 +228,7 @@ units/movement, combat, fog of war, and the signature caravan/route system.
   Phase 5.
 
 ### Exit / Definition of Done
+
 - [ ] A scripted headless game (scripted `Command` sequences) reaches a natural
   end state with economy, cities, units, combat, and caravan network all active.
 - [ ] Isolation penalty: city with zero active routes loses exactly 2 Water/turn;
@@ -231,10 +251,12 @@ units/movement, combat, fog of war, and the signature caravan/route system.
 ## Phase 3 — Behavior (dcs-core)
 
 ### Goal
+
 Add the pure AI (`ai_plan`) and victory tracking so the core can play itself to a
 conclusion, exercising the signature route mechanic as opponents (DD §18 OQ-7).
 
 ### In scope
+
 - `dcs-core::victory` — `VictoryTracker` update at `advance_turn`, V1/V2/V3
   checks, generalized prestige score, turn-limit fallback + elimination,
   `Victory` event (victory-conditions spec §5–§6).
@@ -244,17 +266,21 @@ conclusion, exercising the signature route mechanic as opponents (DD §18 OQ-7).
   MVP ships one Normal-ish profile (ai-opponents spec §5–§6).
 
 ### Out of scope
+
 - Rendering/HUD (Phase 4); balance tuning of weights (Phase 5/6).
 
 ### Key deliverables
+
 - [ ] `docs/specs/behavior-victory-conditions.md` → `dcs-core::victory`
 - [ ] `docs/specs/behavior-ai-opponents.md` → `dcs-core::ai`
 
 ### Dependencies
+
 - Phase 2 (all gameplay modules the AI reads/emits `Command`s for) + Phase 1
   (turn engine, scenario thresholds, save format).
 
 ### Open questions resolved / validated in this phase
+
 - **V2 prestige formula (victory spec §6.2 / §10):** decide between the literal
   DD `Wealth×1+Influence×2` and the spec's generalized territory+route formula
   (recoverable via weights = 0). Recommended: keep the generalized form as
@@ -263,6 +289,7 @@ conclusion, exercising the signature route mechanic as opponents (DD §18 OQ-7).
   the turn-limit fallback needs a distinct `VictoryKind` or reuses `WealthScore`.
 
 ### Exit / Definition of Done
+
 - [ ] `ai_plan` is pure (`&GameState` → `Vec<Command>`), returns **no** `EndTurn`,
   and every emitted command passes `validate` (ai spec §8).
 - [ ] AI emits `ConnectRoute` between unconnected own cities (fog-legal) and
@@ -281,11 +308,13 @@ conclusion, exercising the signature route mechanic as opponents (DD §18 OQ-7).
 ## Phase 4 — Presentation (dcs-render + dcs-app)
 
 ### Goal
+
 Build the macroquad renderer and the glue app so the game is **visually
 playable** (human vs AI) on a small map. Renderer reads `GameState`, emits
 `Command`s only (Rule B / ADR-0003).
 
 ### In scope
+
 - `dcs-render` — `Renderer` + `draw_frame(&self, &GameState, &UiView)`,
   `poll_input() -> Vec<Command>`, `screen_to_hex`, `Camera2D` pan/zoom reusing
   in-core `hex::to_pixel`/`from_pixel` (exact cube-round), `fit_map` (macroquad
@@ -299,17 +328,21 @@ playable** (human vs AI) on a small map. Renderer reads `GameState`, emits
   `dcs-core::serialize`.
 
 ### Out of scope
+
 - Game rules (stay in core); audio/art pass (Phase 6); scenario editor (Phase 6).
 
 ### Key deliverables
+
 - [ ] `docs/specs/presentation-rendering-ui.md` → `dcs-render` + `dcs-app`
 - [ ] ADR-0001 (macroquad; Bevy/egui fallback path documented)
 
 ### Dependencies
+
 - Phase 3 (core fully playable headless) + Phase 1 (`dcs-protocol` `Command`/
   `GameEvent`, save/load).
 
 ### Open questions resolved in this phase
+
 - **DD #10 screen/zoom (OQ-4):** adopt the render spec's recommended default —
   **zoom/pan via `Camera2D`**, with `fit_map` giving an initial whole-map view
   (radius-4 MVP fits one screen by default; full-scope pans/zooms). Confirm
@@ -318,6 +351,7 @@ playable** (human vs AI) on a small map. Renderer reads `GameState`, emits
   if HUD complexity grows (implementation-time render call).
 
 ### Exit / Definition of Done
+
 - [ ] `draw_frame` compiles with `state: &GameState` (no `&mut`); `poll_input`
   returns only `Command`s and never calls `step`/`advance_turn` (render spec §8).
 - [ ] `screen_to_hex` inverts `hex::to_pixel` exactly (same cube-round as core).
@@ -335,10 +369,12 @@ playable** (human vs AI) on a small map. Renderer reads `GameState`, emits
 ## Phase 5 — MVP integration & playtest
 
 ### Goal
+
 Wire everything into the DESIGN-DOC MVP and run a balance tuning pass. Produce
 the **first playable build** that is fun and winnable.
 
 ### In scope
+
 - Drive the game from `ScenarioConfig::mvp_preset()` (radius 4, **3 players**, 30
   turns, V1 only but all meters built) — DD §17.1.
 - Small hex map, fog of war, **3 resources**, **3 unit types**, **1 generic city**
@@ -349,18 +385,22 @@ the **first playable build** that is fun and winnable.
 - Validate the Phase 1 DD #6 raid-order rule under real contention.
 
 ### Out of scope
+
 - 4 specializations, V2/V3 as *active* win conditions, diplomacy/tolls, audio,
   full map sizes, scenario editor (Phase 6).
 
 ### Key deliverables
+
 - [ ] `mvp_preset()` integration in `dcs-app` menu; human-vs-AI small-map build.
 - [ ] Playtest sessions; balance-tables tuned and documented as first-pass → v1.
 - [ ] DD #6 raid-order sign-off (or adjustment) from playtest evidence.
 
 ### Dependencies
+
 - Phase 4 (visual playability) + Phase 3 (AI/victory) + Phase 2 (gameplay).
 
 ### Exit / Definition of Done
+
 - [ ] A human can start the MVP, explore, found a city, lay caravan routes, train
   units, raid, and reach a V1 victory or turn-limit fallback — **winnable and fun**.
 - [ ] AI provides real opposition (expands + raids; routes are defended at
@@ -373,9 +413,11 @@ the **first playable build** that is fun and winnable.
 ## Phase 6 — Full scope / stretch
 
 ### Goal
+
 Complete the full game per DD §17.2, enabling deferred content and polish.
 
 ### In scope
+
 - 4 city specializations enabled (TradeHub/WellFort/Fortress/ScholarOutpost —
   already data-modeled/specced; flip the MVP feature-flag).
 - V2 (Wealth/Prestige) and V3 (Relic Hold) as **active** victory options using the
@@ -388,18 +430,22 @@ Complete the full game per DD §17.2, enabling deferred content and polish.
 - Scenario editor; difficulty tuning; Bevy fallback path documented (ADR-0001).
 
 ### Out of scope
+
 - Anything violating core invariants (pure core, ADR-0003/0008).
 
 ### Key deliverables
+
 - [ ] Specializations + V2/V3 enabled and balanced.
 - [ ] Diplomacy/tolls, symmetry, drought, tiered buildings.
 - [ ] Full map sizes + difficulty tuning; art/audio/accessibility.
 - [ ] Optional scenario editor.
 
 ### Dependencies
+
 - Phase 5 (validated MVP) — everything before it.
 
 ### Exit / Definition of Done
+
 - [ ] Full game per DD §17.2 runs on radius 7–9 maps with all 3 victory types,
   4 specializations, diplomacy, and the full AI matrix.
 - [ ] Accessibility pass verified (colorblind-safe + redundant coding + hotkeys).

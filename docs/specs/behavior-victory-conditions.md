@@ -23,6 +23,7 @@ except updating the tracker it owns.
 ## 2. Scope
 
 **In scope**
+
 - V1 Oasis Dominance (control ≥ `oasis_majority_pct%` of all oases, or eliminate all rivals).
 - V2 Wealth/Prestige Score (prestige score ≥ `wealth_score_target`).
 - V3 Relic Hold (hold ≥ `relic_count` relic sites for `relic_hold_turns` consecutive turns).
@@ -33,6 +34,7 @@ except updating the tracker it owns.
 - `Victory` event emission.
 
 **Out of scope**
+
 - The *display* of victory meters (render spec — HUD top bar).
 - Relic *placement* (world-gen spec); this spec only tracks hold duration.
 - Combat/capture mechanics that *cause* elimination (combat / cities specs).
@@ -138,7 +140,7 @@ DD §13 proposes `Score = Wealth×1 + Influence×2 + oases×8 + active_routes×4
 (oases × 8) and the route-network term (active routes × 4) express the economic
 spine of "routes > oases" (DD §8.6). The weights below match the DD exactly:
 
-```
+```text
 prestige_score(p) = floor(
       Wealth(p)            * PRESTIGE_WEALTH_W(1.0)
     + Influence(p)         * PRESTIGE_INFLUENCE_W(2.0)
@@ -164,7 +166,7 @@ wealth_score_target`.
 
 ### 6.3 V1 — Oasis Dominance
 
-```
+```text
 threshold = ceil(oasis_majority_pct / 100 * total_oases)   // e.g. 50% of 5 -> 3
 win if oases_controlled(p) >= threshold   // majority share
    OR  all other living players are defeated (elimination => instant win)
@@ -179,7 +181,7 @@ winner simply needs the majority of the oases that exist.
 `relic_count` (= N) and `relic_hold_turns` (= M) come from `ScenarioConfig`
 (scenario-config §6.2: N=1 for small/2p maps, N=2 for full; M=6 small, M=10 full).
 
-```
+```text
 win if exists player p such that:
     holds_required_relics(p)                        // p holds ALL relic sites
     AND for every Relic r with is_relic_site:

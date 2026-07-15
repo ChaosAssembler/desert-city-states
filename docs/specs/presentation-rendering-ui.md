@@ -23,6 +23,7 @@ The **recommended default is zoom/pan via `Camera2D`** (DD Open Question #10 car
 ## 2. Scope
 
 **In scope**
+
 - `Renderer` struct + `draw_frame(state, view)`, `poll_input() -> Vec<Command>`, `screen_to_hex`.
 - `Camera2D` pan (drag) / zoom (wheel); axial-hex → world pixel (reuse `dcs-core::hex::to_pixel`); world → screen via camera.
 - Drawing: tiles (terrain tints), units (icon tokens), cities (pop/spec growth), routes (owner/state-colored polyline, red when Threatened/Severed), fog-of-war overlay (hide undiscovered; enemy-in-fog hidden).
@@ -32,6 +33,7 @@ The **recommended default is zoom/pan via `Camera2D`** (DD Open Question #10 car
 - **Explicit read-only guarantee** for render.
 
 **Out of scope**
+
 - Any game *rules* / balance — those live in `dcs-core` (the renderer only reads them).
 - Map generation, AI, combat, economy — consumed only as data/events.
 - Save/load file format (save-load spec) — `dcs-app` may expose menu buttons but the
@@ -186,7 +188,7 @@ space) — see §6.4. 8. **Camera transform pop.**
 
 ### 6.6 `dcs-app` orchestration loop (ARCH §5.7, event-driven)
 
-```
+```rust
 fn run(&mut self) {
     loop {
         match self.state.current_actor {

@@ -180,7 +180,7 @@ For the `current_actor` (DD §16.1 turn flow):
 
 ### 6.4 Combat resolution (auto, DD §10)
 
-```
+```text
 attack_power  = atk * atk_pos;                                  // atk = Atk stat; atk_pos encodes attacker tile effect (flank x1.25 on Ridge / Salt-Flats-exposed x0.90); morale = 1.0 (MVP off)
 defense_power = def * (1 + TERRAIN[defender_tile].defense_mod); // def = Def stat; defender terrain defense mod (Ridge +2, Salt Flats -1); no terrain_atk term
 odds = attack_power / (attack_power + defense_power)
@@ -188,6 +188,7 @@ roll = state.rng.next_f32()            // DRAWS FROM state.rng (ADR-0006)
 if roll < odds { defender takes HP loss; if hp<=0 retreat/destroy }
 else           { attacker takes HP loss; may retreat }
 ```
+
 Terrain defense mods from `TERRAIN` table (Oasis/Dunes 0, SaltFlats −1, Ridges +2, city
 tile + Fortress +3). Attacker tile effect is captured in `atk_pos` (Ridge flank ×1.25, Salt-Flats-exposed ×0.90), NOT a `terrain_atk` defense multiplier. Morale = 1.0 (off for MVP, DD §10.3). **All randomness from `state.rng`.**
 

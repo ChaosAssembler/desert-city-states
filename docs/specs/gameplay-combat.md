@@ -18,6 +18,7 @@ All randomness draws from `GameState.rng`. Emits `GameEvent::Combat` /
 ## 2. Scope
 
 **In scope**
+
 - Auto-resolution formula (attack/defense power, odds, HP loss, retreat/destroy).
 - Terrain defense modifiers (table) + attacker positioning factor.
 - Local combat (only on/adjacent units fight — no global stack, DD §10.3).
@@ -26,6 +27,7 @@ All randomness draws from `GameState.rng`. Emits `GameEvent::Combat` /
 - Resolution-order rule for contested raids (DD #6, recommended default).
 
 **Out of scope**
+
 - Unit movement / A* (units-movement spec) — it triggers combat on enter.
 - Route state machine details (caravan spec) — this spec feeds `Threatened/Severed`.
 - Morale system (DD §10.3 optional/off for MVP — noted, not implemented).
@@ -54,7 +56,7 @@ pub const SIEGE_THREATEN: bool       = true;       // besieged city's outgoing r
 
 Terrain defense mods (DD §10.2, mirrored in `TERRAIN` table):
 
-```
+```text
 Oasis 0, Dunes 0, SaltFlats -1 (exposed), Ridges +2 (defensive), City(Fortress +3)
 ```
 
@@ -81,7 +83,7 @@ pub fn resolve_city_raid(state: &mut GameState, raider: UnitId, city: CityId)
 
 ### 6.1 Core odds formula (DD §10.1)
 
-```
+```rust
 let atk = UNITS[attacker.kind].atk as f32;
 let def = UNITS[defender.kind].def as f32;
 
@@ -133,7 +135,7 @@ meaningful and fully RNG-driven.
 Triggered by `resolve_raid_route` (units spec §6.5) when a Raider is on/adjacent
 to an **exposed** route tile. **Recommended default (carried DD #6):**
 
-```
+```rust
 if route tile HAS a controlling Guard adjacent/on it (caravan spec §6.6):
     // stat contest: Raider (atk) vs Guard (def), terrain-adjusted (caravan §6.7)
     // Raider attacker tile effect via atk_pos (§6.1): Ridge flank x1.25, Salt-Flats-exposed x0.90

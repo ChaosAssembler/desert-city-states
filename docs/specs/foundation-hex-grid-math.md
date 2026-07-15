@@ -23,6 +23,7 @@ deterministic. No external hex crate is used (ARCH §4.4).
 ## 2. Scope
 
 **In scope**
+
 - The `HexCoord` type and the `s = -q - r` cube invariant.
 - Axial↔cube↔pixel conversions (pointy-top) with a single `cube_round` rule.
 - Neighbor direction table, `neighbors`, `distance`, `ring`, `range`, `line`.
@@ -30,6 +31,7 @@ deterministic. No external hex crate is used (ARCH §4.4).
 - Generic graph pathfinding primitives `astar` and `safe_route` over the hex graph.
 
 **Out of scope**
+
 - Terrain/move-cost tables and ownership lookups (those live in `GameState` /
   balance tables — caravan & units specs). The hex module is geometry-only and
   takes pure closures for passability / cost / threat.
@@ -225,20 +227,23 @@ Conversions are pure and lossless in integer space.
 
 ### 6.2 Axial ↔ pixel (pointy-top, size = hex radius in px)
 
-```
+```text
 x_px = size * (SQRT3 * q + SQRT3/2 * r) + origin.x
 y_px = size * (3/2 * r)                       + origin.y
 ```
+
 where `SQRT3 = √3`. Inverse (before rounding):
-```
+
+```text
 q_f = (SQRT3/3 * (x_px - origin.x) - 1/3 * (y_px - origin.y)) / size
 r_f = (2/3 * (y_px - origin.y)) / size
 ```
+
 then convert to cube (`x=q_f, z=r_f, y=-x-z`) and apply `cube_round`.
 
 ### 6.3 `cube_round` (the single rounding rule, Red Blob style)
 
-```
+```text
 rx = round(x); ry = round(y); rz = round(z)
 dx = abs(rx-x); dy = abs(ry-y); dz = abs(rz-z)
 if dx > dy && dx > dz { rx = -ry - rz }
@@ -246,13 +251,14 @@ else if dy > dz       { ry = -rx - rz }
 else                  { rz = -rx - ry }
 return (rx, ry, rz)   // guarantees rx+ry+rz == 0
 ```
+
 This is the ONLY rounding used anywhere (pixel→hex, `line`, pathfinding tie
 ordering). It makes `screen_to_hex` land on the exact hex the resolver uses
 (ADR-0005 determinism).
 
 ### 6.4 Neighbor directions (pointy-top axial)
 
-```
+```text
 AXIAL_DIRS = [ ( 1, 0), ( 1, -1), ( 0, -1),
                (-1, 0), (-1,  1), ( 0,  1) ]
 ```
@@ -260,11 +266,12 @@ AXIAL_DIRS = [ ( 1, 0), ( 1, -1), ( 0, -1),
 
 ### 6.5 Distance (cube distance)
 
-```
+```rust
 let (aq,_,ar) = to_cube(a); let (bq,_,br) = to_cube(b);
-distance = ((aq-bq).abs().max((ar-br).abs()).max((aq+bq+ ... ))) 
+distance = ((aq-bq).abs().max((ar-br).abs()).max((aq+bq+ ... )))
          = (|aq-bq| + |ar-br| + |aq+ar - (bq+br)|) / 2   // == cube max-norm
 ```
+
 Expressed via cube coordinates `(x,y,z)`: `max(|Δx|, |Δy|, |Δz|)`, returned as `u32`.
 
 ### 6.6 `ring` and `range`
@@ -278,20 +285,22 @@ Expressed via cube coordinates `(x,y,z)`: `max(|Δx|, |Δy|, |Δz|)`, returned a
 
 ### 6.7 `line` (lerp + cube_round)
 
-```
+```text
 n = distance(a, b)
 for i in 0..=n:
     t = if n == 0 { 0.0 } else { i as f32 / n as f32 }
     x = lerp(a.x, b.x, t); y = lerp(a.y, b.y, t); z = lerp(a.z, b.z, t)
     push cube_round(x, y, z)
 ```
+
 Result includes both endpoints; `line(a, b).len() == n + 1`.
 
 ### 6.8 `in_map`
 
-```
+```text
 in_map(h, radius) = distance(HexCoord{q:0,r:0}, h) <= radius
 ```
+
 A hexagonal map of `radius` contains `1 + 3*radius*(radius+1)` hexes (radius 4 →
 61; radius 9 → 271).
 

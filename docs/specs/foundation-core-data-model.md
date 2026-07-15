@@ -18,6 +18,7 @@ so that saving a game is identical to replaying it (ADR-0003, ADR-0007).
 ## 2. Scope
 
 **In scope**
+
 - `GameState` aggregate and its owned fields (map, players, cities, units, routes, relics, turn, RNG state, scenario, victory tracking).
 - Entity structs: `Tile`, `City`, `Unit`, `CaravanRoute`, `Player`, `Relic`.
 - ID newtypes and the catalog enums (`TerrainType`, `UnitKind`, `CitySpecialization`, `ResourceKind`, `VictoryKind`, …).
@@ -25,6 +26,7 @@ so that saving a game is identical to replaying it (ADR-0003, ADR-0007).
 - Balance data tables (terrain defs, unit stats, yields) as `const` tables.
 
 **Out of scope**
+
 - Rendering, camera, HUD (lives in `dcs-render`).
 - The resolver/command loop (see `foundation-turn-engine.md`).
 - Map generation algorithm (see `foundation-world-generation.md`).

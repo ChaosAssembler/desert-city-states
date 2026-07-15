@@ -19,6 +19,7 @@ expansion. All stockpile mutation happens through `Command` resolution + the
 ## 2. Scope
 
 **In scope**
+
 - Three stockpiles: **Water**, **Wealth**, **Influence** (per `Player.resources`, DD ยง6).
 - Per-turn **production** from cities, worked-ring tiles, specializations, and routes.
 - Per-turn **sinks**: unit upkeep, training costs, route establish + upkeep, building costs, founding cost, specialization cost.
@@ -28,6 +29,7 @@ expansion. All stockpile mutation happens through `Command` resolution + the
 - The exact **economy update order** within `advance_turn`'s income/upkeep phase.
 
 **Out of scope**
+
 - Route *establish* path computation (see `gameplay-caravan-routes.md`).
 - City *workings* / building effects catalog detail (see `gameplay-cities.md`).
 - Combat (see `gameplay-combat.md`); Ruin one-time rewards (world-gen / turn-engine).
@@ -146,10 +148,11 @@ so replays are deterministic:
 A city works its tile + 6 neighbors (`ring(city_tile, 1)`). For each worked tile
 `(terrain T)`:
 
-```
+```text
 water   += TERRAIN[T].water          // Oasis 3, others 0
 wealth  += TERRAIN[T].wealth         // SaltFlats 1, Oasis 1, others 0
 ```
+
 Plus building bonuses on the city tile itself (see `gameplay-cities.md`):
 Well +2 Water, Market +2 Wealth-from-routes, Temple +1 Influence, Scholar +2 Influence.
 
@@ -157,7 +160,7 @@ Well +2 Water, Market +2 Wealth-from-routes, Temple +1 Influence, Scholar +2 Inf
 
 For each **active** `Route` owned by the actor:
 
-```
+```text
 wealth_route =
     ( ROUTE_WEALTH_BASE(2)
       + trade_endpoints * 1                 // # endpoints that are TradeHub
@@ -178,7 +181,7 @@ but full Wealth still flows.) `network_synergy` is defined in the caravan spec ย
 
 ### 6.4 Starvation detail
 
-```
+```text
 for city in cities_of(player):
     flow = water_in_this_turn_for(city)   // steps 1-5 net, excluding growth
     if city.water == 0 && flow < 0:

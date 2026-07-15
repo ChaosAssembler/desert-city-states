@@ -19,6 +19,7 @@ once any of their tiles is seen). Pure data in core; rendering is a separate ove
 ## 2. Scope
 
 **In scope**
+
 - `Player::discovered: FxHashSet<TileId>` as the visibility source of truth (core-data-model §4.7).
 - Reveal sources & radii (Scout 3, Caravan Guard 1, Raider 2, City 2, Scholar +1, Watchtower 2).
 - Reveal-on-move / reveal-on-found / reveal-on-route-create.
@@ -27,6 +28,7 @@ once any of their tiles is seen). Pure data in core; rendering is a separate ove
 - Interaction contract with rendering (read-only; noted).
 
 **Out of scope**
+
 - Camera / draw calls / fog overlay rendering (render layer — DD §3.1, ARCH §8).
 - Which visual tint/alpha to use (render-only).
 - AI *decision* use of fog (later spec) — but the *data* it may read is defined here.

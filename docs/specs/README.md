@@ -1,6 +1,6 @@
 # Desert City States — Technical Specs
 
-> **Phase 3 (per-system specs) — Foundation + Gameplay + Behavior & Presentation groups**
+> **Planning doc:** 3 of 4 (per-system specs) — Foundation + Gameplay + Behavior & Presentation groups
 > Source of truth: `docs/design/Desert-City-States.md` + `docs/architecture/ARCHITECTURE.md` + `docs/architecture/decisions/` (ADRs 0001–0008).
 
 These specs describe the foundation systems that live in `dcs-core` (pure sim)
@@ -14,33 +14,33 @@ implementation and consistent with the design doc and the 8 ADRs. No `.rs` or
 
 | Spec | File | Crate | Implements | Status |
 |---|---|---|---|---|
-| Core Data Model | [foundation-core-data-model.md](./foundation-core-data-model.md) | dcs-core | DD §5–§9,§13; ARCH §3; ADR-0002/0003 | Draft |
-| Hex Grid Math | [foundation-hex-grid-math.md](./foundation-hex-grid-math.md) | dcs-core (`hex`) | DD §5.1; ARCH §4; ADR-0005 | Draft |
-| World Generation | [foundation-world-generation.md](./foundation-world-generation.md) | dcs-core (`map`) | DD §5.2–§5.7; ARCH §10; ADR-0006 | Draft |
-| Turn Engine | [foundation-turn-engine.md](./foundation-turn-engine.md) | dcs-core (`turn`) + dcs-protocol | DD §4,§16.1; ARCH §5; ADR-0004 | Draft |
-| Scenario Config | [foundation-scenario-config.md](./foundation-scenario-config.md) | dcs-core (`scenario`) | DD §5.2,§13,§16.2; ARCH §11; ADR-0003/0007 | Draft |
-| Save / Load | [foundation-save-load.md](./foundation-save-load.md) | dcs-core (`serialize`) + dcs-protocol | DD §5.4; ARCH §7; ADR-0007 | Draft |
+| Core Data Model | [foundation-core-data-model.md](./foundation-core-data-model.md) | dcs-core | DD §5–§9,§13; ARCH §3; ADR-0002/0003 | Draft for review |
+| Hex Grid Math | [foundation-hex-grid-math.md](./foundation-hex-grid-math.md) | dcs-core (`hex`) | DD §5.1; ARCH §4; ADR-0005 | Draft for review |
+| World Generation | [foundation-world-generation.md](./foundation-world-generation.md) | dcs-core (`map`) | DD §5.2–§5.7; ARCH §10; ADR-0006 | Draft for review |
+| Turn Engine | [foundation-turn-engine.md](./foundation-turn-engine.md) | dcs-core (`turn`) + dcs-protocol | DD §4,§16.1; ARCH §5; ADR-0004 | Draft for review |
+| Scenario Config | [foundation-scenario-config.md](./foundation-scenario-config.md) | dcs-core (`scenario`) | DD §5.2,§13,§16.2; ARCH §11; ADR-0003/0007 | Draft for review |
+| Save / Load | [foundation-save-load.md](./foundation-save-load.md) | dcs-core (`serialize`) + dcs-protocol | DD §5.4; ARCH §7; ADR-0007 | Draft for review |
 
 ### Gameplay group (Phase 3)
 
 | Spec | File | Crate | Implements | Status |
 |---|---|---|---|---|
-| Resources & Economy | [gameplay-resources-economy.md](./gameplay-resources-economy.md) | dcs-core (`economy`) | DD §6; ARCH §3,§5,§16; ADR-0004 | Draft |
-| Cities | [gameplay-cities.md](./gameplay-cities.md) | dcs-core (`world`) | DD §7; ARCH §3,§15; ADR-0002/0004 | Draft |
-| Caravan & Trade Routes | [gameplay-caravan-routes.md](./gameplay-caravan-routes.md) | dcs-core (`caravan`) | DD §8; ARCH §4.3,§5,§15; ADR-0004/0005 | Draft |
-| Units & Movement | [gameplay-units-movement.md](./gameplay-units-movement.md) | dcs-core (`world`/`hex`) | DD §9; ARCH §4.3,§5,§15; ADR-0004/0005 | Draft |
-| Combat | [gameplay-combat.md](./gameplay-combat.md) | dcs-core (`combat`) | DD §10; ARCH §5,§16; ADR-0004/0006 | Draft |
-| Fog of War | [gameplay-fog-of-war.md](./gameplay-fog-of-war.md) | dcs-core (`fog`) | DD §12; ARCH §12; ADR-0003/0004 | Draft |
+| Resources & Economy | [gameplay-resources-economy.md](./gameplay-resources-economy.md) | dcs-core (`economy`) | DD §6; ARCH §3,§5,§16; ADR-0004 | Draft for review |
+| Cities | [gameplay-cities.md](./gameplay-cities.md) | dcs-core (`world`) | DD §7; ARCH §3,§15; ADR-0002/0004 | Draft for review |
+| Caravan & Trade Routes | [gameplay-caravan-routes.md](./gameplay-caravan-routes.md) | dcs-core (`caravan`) | DD §8; ARCH §4.3,§5,§15; ADR-0004/0005 | Draft for review |
+| Units & Movement | [gameplay-units-movement.md](./gameplay-units-movement.md) | dcs-core (`world`/`hex`) | DD §9; ARCH §4.3,§5,§15; ADR-0004/0005 | Draft for review |
+| Combat | [gameplay-combat.md](./gameplay-combat.md) | dcs-core (`combat`) | DD §10; ARCH §5,§16; ADR-0004/0006 | Draft for review |
+| Fog of War | [gameplay-fog-of-war.md](./gameplay-fog-of-war.md) | dcs-core (`fog`) | DD §12; ARCH §12; ADR-0003/0004 | Draft for review |
 
 ### Behavior & Presentation group (Phase 3)
 
 | Spec | File | Crate | Implements | Status |
 | --- | --- | --- | --- | --- |
-| AI Opponents | [behavior-ai-opponents.md](./behavior-ai-opponents.md) | dcs-core (`ai`) | DD §11; ARCH §9; ADR-0003/0004/0006 | Draft |
-| Victory Conditions | [behavior-victory-conditions.md](./behavior-victory-conditions.md) | dcs-core (`victory`) | DD §13; ARCH §13; ADR-0003/0004/0006 | Draft |
-| Rendering & UI | [presentation-rendering-ui.md](./presentation-rendering-ui.md) | dcs-render + dcs-app | DD §3; ARCH §8; ADR-0001/0003/0004/0005 | Draft |
+| AI Opponents | [behavior-ai-opponents.md](./behavior-ai-opponents.md) | dcs-core (`ai`) | DD §11; ARCH §9; ADR-0003/0004/0006 | Draft for review |
+| Victory Conditions | [behavior-victory-conditions.md](./behavior-victory-conditions.md) | dcs-core (`victory`) | DD §13; ARCH §13; ADR-0003/0004/0006 | Draft for review |
+| Rendering & UI | [presentation-rendering-ui.md](./presentation-rendering-ui.md) | dcs-render + dcs-app | DD §3; ARCH §8; ADR-0001/0003/0004/0005 | Draft for review |
 
-## Cross-cutting invariants (all Phase-3 specs)
+## Cross-cutting invariants (all 15 per-system specs)
 
 - **Pure core:** `dcs-core` depends only on `dcs-protocol` + std/serde/rand. No macroquad/render/app (ADR-0003, ADR-0008).
 - **No ECS:** plain data + free functions over `GameState` (ADR-0002).

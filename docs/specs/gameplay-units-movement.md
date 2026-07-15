@@ -18,6 +18,7 @@ the unit **actions** (FoundCity, GuardRoute/Patrol, RaidRoute, RaidCity, Attack)
 ## 2. Scope
 
 **In scope**
+
 - `UnitKind` stats table (Move/Atk/Def/HP/Upkeep/Sight + abilities).
 - `MoveUnit` resolution: A* path, `moves_left` consumption, fog reveal, combat-on-enter, ruin reward.
 - Zone of Control (light, Fortress-projected).
@@ -26,6 +27,7 @@ the unit **actions** (FoundCity, GuardRoute/Patrol, RaidRoute, RaidCity, Attack)
 - Unit ↔ route interaction (control grant, sever trigger).
 
 **Out of scope**
+
 - The combat *formula* itself (combat spec) — this spec triggers it.
 - Route *establish*/yield/state machine (caravan spec).
 - Founding cost details (cities spec); AI movement planning (later spec).

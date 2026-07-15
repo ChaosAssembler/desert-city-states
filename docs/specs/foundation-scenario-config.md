@@ -111,7 +111,7 @@ player_count=3, turn_limit=30` with same thresholds (V1 focus).
 
 Applied by `scale_thresholds` so small boards / 2 players stay winnable:
 
-```
+```rust
 let size_factor = clamp(map_radius as f32 / 7.0, 0.5, 1.0);  // radius 4 -> ~0.57
 let pct_factor  = clamp(player_count as f32 / 4.0, 0.5, 1.0); // 2p -> 0.5
 

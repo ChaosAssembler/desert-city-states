@@ -28,3 +28,7 @@ run = "cargo clippy --workspace -- -D warnings"
 [tasks.purity]
 description = "Fail if dcs-core pulls in macroquad / dcs-render / dcs-app (forbidden edges)"
 run = "cargo tree -p dcs-core | grep -qE 'macroquad|dcs-render|dcs-app' && { echo 'FORBIDDEN EDGE: dcs-core must not depend on macroquad/dcs-render/dcs-app'; exit 1; } || true"
+
+[tasks.lint-md]
+description = "Lint the documentation tree with markdownlint-cli2"
+run = "markdownlint-cli2 \"docs/**/*.md\""

@@ -20,6 +20,7 @@ are **established** (auto-routed via a threat-weighted Dijkstra), their exact
 ## 2. Scope
 
 **In scope**
+
 - `ConnectRoute` resolve (cost + auto-route via `safe_route`).
 - `safe_route` threat-weighted Dijkstra over the hex graph.
 - `CaravanRoute` `path`, `status`, `upkeep`, `consecutive_threatened`.
@@ -31,6 +32,7 @@ are **established** (auto-routed via a threat-weighted Dijkstra), their exact
 - Route diplomacy / tolls — stretch note only.
 
 **Out of scope**
+
 - The actual combat *formula* (combat spec) — this spec defines the **raid contest
   trigger & odds inputs**, combat spec resolves HP.
 - Economy *update order* (resources-economy spec applies the yields this spec computes).
@@ -121,7 +123,7 @@ pub fn water_transfer(state: &GameState, route: &CaravanRoute) -> Option<(CityId
 
 Edge weight from tile `a` to neighbor `b`:
 
-```
+```text
 w(a->b) = TERRAIN[b].move_cost                       // Oasis 1, Dunes 2, SaltFlats 1, Ridges 3, Ruins 1
          * (1.0 + threat_penalty(b))
 
@@ -141,7 +143,7 @@ threat_penalty(b) =
 
 ### 6.2 Route Wealth yield (per ACTIVE route, per turn) — DD §8.3
 
-```
+```text
 trade_endpoints = count of endpoints whose city.specialization == TradeHub           // 0,1,2
 markets        = count of endpoints whose city.buildings contains Market             // 0,1,2
 dist_factor    = min(route.length - 1, ROUTE_DIST_CAP) as f32 * ROUTE_DIST_BONUS  // capped
@@ -161,7 +163,7 @@ wealth = floor(base)  -> u32
 
 ### 6.3 Route Water transfer (DD §8.3) — "routes > oases"
 
-```
+```text
 (source, sink) = water_transfer(route):
     prodA = city_water_production(endpointA)   // terrain + Well + WellFort(+3)
     prodB = city_water_production(endpointB)
@@ -172,6 +174,7 @@ wealth = floor(base)  -> u32
     else:
         transfer = WATER_TRANSFER_PER_ROUTE(2)
 ```
+
 The `+2` delivered to the dependent (non-Well Fort) endpoint **offsets** the `−1`
 route upkeep, so a connected dependent city nets **+1 Water/turn** from the route on
 top of its own oasis, while an *isolated* city pays the isolation penalty (−2).
@@ -199,7 +202,7 @@ For each route, let `exposed = path tiles not controlled` (see §6.6). A route i
 **controlled** if every exposed tile has **no enemy unit on/adjacent**; otherwise it
 is contestable.
 
-```
+```text
 enemy_adjacent_to_exposed =
     exists tile t in path where NOT controlled(t)
         AND (enemy unit on t OR enemy unit adjacent to t)

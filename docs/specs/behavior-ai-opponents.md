@@ -24,6 +24,7 @@ stable extension point for adding those tiers and alternate AI implementations (
 ## 2. Scope
 
 **In scope**
+
 - `ai_plan(state, player, difficulty) -> Vec<Command>` — the single public entry.
 - No-cheat visibility: AI reads only tiles/entities permitted by its `discovered` set.
 - Personality-driven weighted utility (Expansionist / Raider / Trader / Fortifier, DD §11.1).
@@ -34,6 +35,7 @@ stable extension point for adding those tiers and alternate AI implementations (
 - Route-security baked into utility (DD §18 OQ-7).
 
 **Out of scope**
+
 - Rendering / input (render spec). The AI only returns `Command`s.
 - The resolver / turn engine (turn-engine spec) — it applies the returned `Command`s.
 - Combat formula (combat spec), route establishment path (caravan spec), yield math
@@ -105,7 +107,7 @@ Base weight tables (first-pass, tunable — DD §18 OQ-1 analogue for AI):
 
 Difficulty multiplies the *greed/competence* axis, not the personality:
 
-```
+```text
 Easy   = command_budget 4,  lookahead 0, security*0.4, route*0.7, preemptive_raid=false, defend_core_routes=false, morale=1.0 (default; no morale-based modifiers, DD §11.3)
 Normal = command_budget 7,  lookahead 1, (weights as-is),        preemptive_raid=false, defend_core_routes=true
 Hard   = command_budget 10, lookahead 2, security*1.2, raid*1.2,  preemptive_raid=true,  defend_core_routes=true
@@ -152,7 +154,7 @@ to rank and budget; it is never stored.
 
 ### 6.1 Pipeline: assess → prioritize → emit
 
-```
+```rust
 fn ai_plan(state, player, difficulty) -> Vec<Command> {
     let p = params_for(personality_of(state, player), difficulty);
     let sit = assess(state, player);                 // fog-aware snapshot

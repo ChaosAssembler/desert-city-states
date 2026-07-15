@@ -3,7 +3,7 @@
 > **Status:** Draft (Phase 2 of planning — architecture)
 > **Version:** 1.0
 > **Source of truth for game behavior:** `docs/design/Desert-City-States.md` (the Design Document, "DD")
-> **Companion docs:** `docs/planning/` (roadmap/technical specs — future), `docs/architecture/decisions/` (ADRs)
+> **Companion docs:** `docs/planning/` (ROADMAP.md and per-system technical specs), `docs/architecture/decisions/` (ADRs)
 > **Scope of this document:** This is a *planning* artifact. It describes the **intended** structure precisely so a workspace can be scaffolded later. **No Cargo.toml, no `.rs` files, and no scaffolding are produced by this phase.**
 
 ---
@@ -65,9 +65,9 @@ Rationale:
 
 A single workspace at the repo root with four member crates:
 
-```
+```text
 desert-city-states/            (workspace root, virtual manifest)
-├── Cargo.toml                 (workspace: members + shared profile)
+├── Cargo.toml                 (workspace: members + [workspace.package])
 ├── crates/
 │   ├── dcs-core/              (simulation — pure, deterministic, serde)
 │   ├── dcs-render/            (macroquad presentation layer)
@@ -81,7 +81,7 @@ desert-city-states/            (workspace root, virtual manifest)
 
 ### 2.2 Dependency directions (arrows = "depends on")
 
-```
+```text
         ┌─────────────┐
         │  dcs-app    │   main(), loop, save/load menu, input dispatch
         └──────┬──────┘
@@ -115,6 +115,7 @@ This avoids leaking macroquad or app concerns into core and gives a single, revi
 ### 2.4 Crate responsibilities & public API surface (high level)
 
 #### `dcs-core` — simulation
+
 - **Responsibility:** everything in the game model — hex math, map generation, entities, economy, caravan system, combat, fog of war, AI, turn engine, serialization, seeded RNG.
 - **Public API (high level):**
   - `GameState` — the central aggregate (§3).
@@ -125,6 +126,7 @@ This avoids leaking macroquad or app concerns into core and gives a single, revi
   - Pure AI entry: `fn ai_plan(state: &GameState, player_id: PlayerId, difficulty: Difficulty) -> Vec<Command>`.
 
 #### `dcs-render` — presentation (macroquad)
+
 - **Responsibility:** camera, drawing tiles/units/cities/routes, fog overlay, HUD/UI, translating pointer input into `Command`s. Holds **no** game rules.
 - **Public API (high level):**
   - `struct Renderer { camera: Camera2D, ... }`
@@ -133,6 +135,7 @@ This avoids leaking macroquad or app concerns into core and gives a single, revi
   - `fn screen_to_hex(&self, screen: Vec2) -> HexCoord` — inverse mapping for input (§8).
 
 #### `dcs-app` — glue
+
 - **Responsibility:** `main()`, the frame/turn loop, save/load menu, wiring input→`dcs-core`→`dcs-render`. Owns orchestration only.
 - **Public API (high level):**
   - `fn main()` — entry.
@@ -141,6 +144,7 @@ This avoids leaking macroquad or app concerns into core and gives a single, revi
   - `fn save(state: &GameState, path: &Path) -> Result<()>`, `fn load(path: &Path) -> Result<GameState>` (delegating to `dcs-protocol` + `dcs-core::serialize`).
 
 #### `dcs-protocol` — save/command contract
+
 - **Responsibility:** versioned save envelope + the `Command`/`GameEvent` enums and shared errors.
 - **Public API (high level):**
   - `enum Command { ... }` (§5)
@@ -368,7 +372,7 @@ Commands are applied **in the order submitted**; movement before combat before i
 
 ### 5.7 Orchestration loop (`dcs-app::run`, pseudocode)
 
-```
+```text
 loop {
     match current actor {
         Human => { commands = render.poll_input() until EndTurn; }
@@ -501,11 +505,25 @@ We are **committed to macroquad** for MVP/full scope. If scope explodes (e.g., n
 
 ### 14.2 Architecture risks
 
-1. **Keeping core pure as render needs grow** — temptation to push "just a little" query into core via app state. Mitigation: CI lint / review enforcing `dcs-core` has no macroquad/engine dep (cargo feature gate + `cargo tree` check).
-2. **Save versioning** — balance table changes can break old saves. Mitigation: `VersionedSave` + migration functions; document breaking vs. non-breaking.
-3. **UI complexity** — HUD/minimap/route-planning UI may outgrow macroquad's built-in UI; **egui fallback** noted.
-4. **AI route-competence** (DD Open Question #7) — signature mechanic falls flat if AI ignores routes. Mitigated by baking route-security into utility weights; still a tuning risk.
-5. **Resolution-order for contested raids** (DD Open Question #6) — needs a defined rule (proposed: actor order, first-come).
+#### 14.2.1 Keeping core pure as render needs grow
+
+temptation to push "just a little" query into core via app state. Mitigation: CI lint / review enforcing `dcs-core` has no macroquad/engine dep (cargo feature gate + `cargo tree` check).
+
+#### 14.2.2 Save versioning
+
+balance table changes can break old saves. Mitigation: `VersionedSave` + migration functions; document breaking vs. non-breaking.
+
+#### 14.2.3 UI complexity
+
+HUD/minimap/route-planning UI may outgrow macroquad's built-in UI; **egui fallback** noted.
+
+#### 14.2.4 AI route-competence
+
+(DD Open Question #7) — signature mechanic falls flat if AI ignores routes. Mitigated by baking route-security into utility weights; still a tuning risk.
+
+#### 14.2.5 Resolution-order for contested raids
+
+(DD Open Question #6) — needs a defined rule (proposed: actor order, first-come).
 
 ### 14.3 Open questions to surface to the user/team
 
@@ -547,7 +565,7 @@ We are **committed to macroquad** for MVP/full scope. If scope explodes (e.g., n
 - **`dcs-core`:** returns `Result<_, CoreError>` for fallible ops (invalid command, gen failure); panics **only** for violated invariants (e.g., ID not found — a bug). No user-facing error strings in core.
 - **`dcs-app`:** uses `anyhow` for top-level orchestration errors and `thiserror` for typed errors surfaced to UI (save/load failures, bad scenario file).
 - **Logging:** `tracing` across all crates (structured, leveled). Core logs only simulation-relevant events (turn boundaries, RNG draws in debug); render logs input/frame stats in debug.
-- **Dev tooling:** `cargo test -p dcs-core` (headless sim tests), a `--headless` app flag to run N games to completion (balance/AI smoke tests), `cargo tree` CI gate asserting `dcs-core` has no macroquad/app deps (enforces Rule B/A).
+- **Dev tooling:** `cargo test -p dcs-core` (headless sim tests) is available now; a `--headless` app flag to run N games to completion for balance/AI smoke tests is **planned future tooling** (deliverable, ROADMAP Phase 3/5); `cargo tree` CI gate asserting `dcs-core` has no macroquad/app deps (enforces Rule B/A).
 
 ---
 
@@ -575,4 +593,4 @@ Eight ADRs (0001–0008) are **already authored** and live in `docs/architecture
 
 ---
 
-*End of Architecture Document v1.0. Forward references: `docs/design/Desert-City-States.md`, `docs/architecture/decisions/` (ADRs), `docs/planning/` (technical specs + roadmap — later phases).*
+*End of Architecture Document v1.0. Forward references: `docs/design/Desert-City-States.md`, `docs/architecture/decisions/` (ADRs), `docs/planning/` (technical specs + ROADMAP.md).*

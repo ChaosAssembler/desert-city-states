@@ -18,6 +18,7 @@ source besides routes. Tied to DD §7.
 ## 2. Scope
 
 **In scope**
+
 - Founding rules + cost; the DD #4 open question with a recommended default.
 - Population growth model and its gating of building slots / unit caps / defense.
 - Worked-ring definition and what it yields.
@@ -27,6 +28,7 @@ source besides routes. Tied to DD §7.
 - How a city supplies resources and trains units.
 
 **Out of scope**
+
 - Route *establish* (caravan spec); combat (combat spec); economy *update order*
   (resources-economy spec — this spec defines building/spec *effects*, the economy
   spec applies them).
@@ -163,7 +165,7 @@ Validation (`resolve_found_city`):
 
 ### 6.2 Growth & population (DD §7.2)
 
-```
+```text
 if city.water_stockpile > GROWTH_WATER_THRESHOLD(5):
     city.growth_timer += 1
     if city.growth_timer >= GROWTH_PERIOD_TURNS(3):
@@ -172,6 +174,7 @@ if city.water_stockpile > GROWTH_WATER_THRESHOLD(5):
 else:
     city.growth_timer = 0     // surplus must be *consecutive*
 ```
+
 Population drives `building_slots` (§5) and the empire unit cap (`2 + total Pop`,
 units spec §6.4) and city defense strength (combat spec).
 

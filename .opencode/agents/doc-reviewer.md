@@ -8,6 +8,9 @@ permission:
     "docs/*": allow
   grep:
     "docs/*": allow
+  bash:
+    "mise run lint-md": allow
+    "markdownlint-cli2 *": allow
   skill:
     doc-consistency: allow
     spec-driven-development: allow
@@ -57,6 +60,12 @@ Load the `planning` skill for planning document conventions.
 8. Design doc compliance — balance tables, status field, design-vs-implementation separation per design-doc
 9. ADR compliance — correct template sections (Status/Date/Context/Decision/Alternatives/Consequences) per adr
 10. Planning doc compliance — status indicators, phase structure, cross-references per planning
+
+### Markdown syntax checks (markdownlint — distinct from semantic/cross-reference checks above)
+11. Run the markdown linter on the docs under review:
+    - Preferred: `mise run lint-md`
+    - Fallback if mise is unavailable: `markdownlint-cli2 "docs/**/*.md"`
+    - Report any markdownlint syntax violations in the review report, integrated with the `review-reporting` structured format. Keep these separate from the semantic/cross-reference findings above.
 
 ## Output format
 

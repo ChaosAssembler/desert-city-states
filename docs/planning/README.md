@@ -1,6 +1,6 @@
 # Desert City States — Planning Index
 
-> **Status:** Phase 4 — implementation roadmap (final planning deliverable)
+> **Status:** Planning doc 4 of 4 — implementation roadmap. Implementation status: Phase 0 complete, Phase 1 next.
 > Companion to `docs/design/`, `docs/architecture/`, `docs/architecture/decisions/`, and `docs/specs/`.
 
 This directory holds the phased implementation plan. All plans are documentation
