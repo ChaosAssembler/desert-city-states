@@ -71,3 +71,4 @@ Load the `mise-management` skill for instructions on how to manage tools correct
 - Never use `--global`/`-g`, `--local`/`-l`, `--env`/`-e`, `--file`/`-f`, `--path`/`-p`, or `--cd`/`-C` flags
 - Never run `mise exec` or `mise run`
 - Never execute any development tool directly
+- Bash is allow-listed to these `mise` subcommands only: `use`, `install`, `uninstall`, `unuse`, `upgrade`, `prune`, `ls`, `ls-remote`, `latest`, `current`, `outdated`, `search`, `registry`, `where`, `which`, `link`, `sync`, `lock`, `cache`, `bin-paths`, `plugin`, `config`, `settings`, `trust`, `untrust`, `fmt`, `doctor`, `help` (with `*` args). All `--global`/`-g`, `--local`/`-l`, `--env`/`-e`, `--file`/`-f`, `--cd`/`-C` flag variants and `mise exec`/`mise run` are denied; any other command is blocked (deny-by-default).

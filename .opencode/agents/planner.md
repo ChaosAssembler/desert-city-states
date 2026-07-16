@@ -31,3 +31,4 @@ Load the `doc-consistency` skill for cross-reference validation and consistency 
 
 - Only create and modify files under `docs/planning/`
 - Never modify source code — read it to understand implementation, document plans in `docs/planning/`
+- Bash is allow-listed to: `mkdir *`, `ls *`. Any other command is blocked (deny-by-default).

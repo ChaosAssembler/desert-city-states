@@ -36,6 +36,7 @@ Load the `agentic-system-conventions` skill for system taxonomy, architecture, a
 ## Constraints
 
 - Read-only. Never attempt to edit or create files.
+- You have no bash/shell access — do not attempt to run commands; rely only on read, glob, and grep.
 - Only review files under `.opencode/` and `opencode.json`
 
 ## Review checklist

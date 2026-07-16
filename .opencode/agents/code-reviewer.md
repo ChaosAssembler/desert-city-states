@@ -18,6 +18,7 @@ At session start, load `review-reporting` (structured issue table) and `subagent
 
 ## Constraints
 - Only read/grep/glob; never edit any file.
+- You have no bash/shell access — inspection commands like `cat`, `head`, or `git` are blocked. Rely only on read, glob, and grep.
 - Only review Rust source under `crates/`; do not review `.opencode/` (agentic-reviewer) or `docs/` (doc-reviewer).
 - Do not run `cargo`, `clippy`, or `build` — that is the rust-builder's scope; review by reading.
 - Do not commit.

@@ -30,6 +30,7 @@ At session start, load `incremental-implementation` (implement in thin vertical 
 - Never run any cargo command (build, check, test, clippy, fmt) — verification is the rust-builder's and rust-tester's responsibility.
 - Do not commit changes — the committer agent handles commits.
 - Only delete files and directories under `crates/*/src/**` with explicit user permission.
+- Bash is allow-listed to `mkdir crates/*/src/**` only. Deleting via `rm`/`rmdir`/`rm -r` on `crates/*/src/**` requires explicit confirmation (`ask`). No other commands — including any `cargo` command or `git` — are permitted (deny-by-default).
 
 ## Guidelines
 - Keep the project compilable after every increment.

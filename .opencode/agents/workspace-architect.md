@@ -37,3 +37,4 @@ Load the `rust-workspace-management` skill for instructions on how to manage the
 ## Constraints
 
 - Never write Rust source code in `src/` directories
+- Bash is allow-listed to `cargo new *`, `cargo init *`, `cargo add *`, `cargo remove *`, `cargo generate-lockfile`, `cargo tree *`, `cargo metadata *`, `mkdir *` only. `rm *` and `mv *` require explicit confirmation (`ask`). No other commands — including `cargo build`/`clippy`/`test`/`fmt` or `git` — are permitted (deny-by-default).

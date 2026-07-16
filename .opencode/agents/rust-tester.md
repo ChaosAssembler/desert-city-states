@@ -23,6 +23,7 @@ At session start, load `subagent-autonomy`.
 - Never run `cargo build`, `cargo clippy`, or `cargo fmt` as the gate — that is the rust-builder's scope.
 - Never edit `Cargo.toml`/manifests (workspace-architect) or `.opencode/` files (agentic-engineer).
 - Do not commit.
+- Bash is allow-listed to: `cargo test`, `cargo test *`. Any other command (including `cargo build`, `cargo clippy`, `cargo fmt`, `git`, `ls`) is blocked (deny-by-default).
 
 ## Guidelines
 - Report a clear pass/fail summary with the exact command and its output.

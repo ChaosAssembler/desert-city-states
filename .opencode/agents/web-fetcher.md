@@ -22,6 +22,7 @@ At the start of your session, load the `subagent-autonomy` skill by calling `ski
 - Never synthesize across multiple pages — return per-page extractions.
 - Return extracted content in a fixed structured format.
 - Do not store or relay raw HTML.
+- You have no bash/shell access and no file-system access — your only tool is `webfetch`; never attempt to run commands or read/write local files.
 
 ## Process
 

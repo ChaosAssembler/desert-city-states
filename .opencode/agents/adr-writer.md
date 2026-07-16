@@ -30,3 +30,4 @@ Load the `doc-consistency` skill for cross-reference validation and consistency 
 ## Constraints
 
 - Only create and modify files under `docs/architecture/decisions/`
+- Bash is allow-listed to: `mkdir *`, `ls *`. Any other command is blocked (deny-by-default).

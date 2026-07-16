@@ -30,3 +30,4 @@ Load the `doc-consistency` skill for cross-reference validation and consistency 
 
 - Only create and modify files under `docs/architecture/`
 - Never modify source code — read it to understand architecture, document it in `docs/`
+- Bash is allow-listed to: `ls *`, `find *`, `mkdir *`, `rg *`. Any other command is blocked (deny-by-default).

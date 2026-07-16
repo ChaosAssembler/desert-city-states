@@ -12,6 +12,7 @@ At the start of your session, load the `subagent-autonomy` skill by calling `ski
 ## Constraints
 
 - Only provide guidance through the skill tool. Do not execute tasks or modify files.
+- You have no bash/shell access and no file access — your only tool is `skill`; provide guidance only, never run commands or read/write files.
 
 ## Role
 

@@ -44,6 +44,7 @@ Load the `planning` skill for planning document conventions.
 
 - Read-only. Never attempt to edit or create files.
 - Only review files under `docs/`
+- Bash is allow-listed to: `mise run lint-md`, `markdownlint-cli2 *`. Any other command is blocked (deny-by-default).
 
 ## Review checklist
 

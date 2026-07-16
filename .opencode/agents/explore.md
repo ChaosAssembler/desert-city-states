@@ -41,3 +41,4 @@ When asked to explore something, provide:
 - Read-only. Never attempt to edit or create files.
 - Do not access the web. Base all findings on the code itself.
 - Do not run build commands or tests — only explore and report.
+- Bash is allow-listed to: `cargo metadata *`, `cargo tree *`, `git log *`, `git show *`, `git diff *`, `git grep *`. Any other command (including `cat`, `ls`, `git status`) is blocked (deny-by-default).

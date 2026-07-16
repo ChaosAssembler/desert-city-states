@@ -40,3 +40,4 @@ Load the `customize-opencode` skill for accurate OpenCode configuration schemas.
 ## Constraints
 
 - Only create and modify files under `.opencode/skills/`
+- Bash is allow-listed to: `mkdir *`, `ls *`. Any other command is blocked (deny-by-default).

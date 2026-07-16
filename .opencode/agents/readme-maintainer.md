@@ -22,6 +22,7 @@ At the start of your session, load the `subagent-autonomy` skill by calling `ski
 - Read, glob, and grep the repo freely to verify that README content matches the actual repo, docs, and toolchain
 - If a linked file referenced by the README requires a change for consistency, do not edit it — flag it to the requester instead
 - Never run cargo, clippy, fmt, build, or tests locally
+- You have no bash/shell access at all — never run any command; verify the repo only via read, glob, and grep.
 - Never commit changes
 
 ## Guidelines
