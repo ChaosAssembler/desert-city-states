@@ -1,5 +1,5 @@
 ---
-description: Writes Rust source code for the Desert City-States game following specs, architecture conventions, and the incremental-implementation workflow
+description: Writes or implements Rust source under crates/*/src/ from a spec or plan. Edits source only. Never builds, tests, or commits.
 mode: subagent
 permission:
   read: allow

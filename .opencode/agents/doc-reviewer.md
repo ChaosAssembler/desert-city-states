@@ -1,5 +1,5 @@
 ---
-description: Reviews documentation in docs/ for consistency, cross-reference integrity, and convention adherence
+description: Reviews documentation under docs/ for consistency, cross-reference integrity, and convention adherence. Read-only. Reports findings and never edits.
 mode: subagent
 permission:
   read:

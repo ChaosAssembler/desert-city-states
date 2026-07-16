@@ -1,5 +1,5 @@
 ---
-description: Generates architecture documentation — module docs, system descriptions, and technical overviews
+description: Creates or maintains technical architecture documentation under docs/architecture/. Covers module overviews, system design, and data flow. Distinct from game design and decision records.
 mode: subagent
 permission:
   read: allow

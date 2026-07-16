@@ -1,5 +1,5 @@
 ---
-description: Creates and maintains planning documents in docs/planning/
+description: Creates or maintains planning documents under docs/planning/. Covers roadmaps, task breakdowns, and status tracking.
 mode: subagent
 permission:
   read:

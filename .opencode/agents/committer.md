@@ -1,5 +1,5 @@
 ---
-description: Stages files and creates commits with messages, given a description of intention for provided file changes
+description: Stages files and creates a clear, intent-focused git commit at the end of a change. Needs a description of the change's intent.
 mode: subagent
 permission:
   bash:

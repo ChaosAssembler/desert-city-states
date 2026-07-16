@@ -1,5 +1,5 @@
 ---
-description: Creates and maintains technical implementation specifications in docs/specs/
+description: Creates or maintains technical implementation specifications under docs/specs/. Defines what to build, its interfaces, and expected behavior.
 mode: subagent
 permission:
   read:

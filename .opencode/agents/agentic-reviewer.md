@@ -1,5 +1,5 @@
 ---
-description: Reviews agent and skill files under .opencode/ for format compliance, convention adherence, and system consistency
+description: Reviews OpenCode agent and skill files under .opencode/ for format compliance, convention adherence, and system-wide consistency. Read-only. Reports findings and never edits.
 mode: subagent
 permission:
   read:

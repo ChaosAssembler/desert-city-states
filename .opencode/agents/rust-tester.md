@@ -1,5 +1,5 @@
 ---
-description: Runs the Rust test suite across the workspace and reports results
+description: Runs the Rust test suite across the workspace and reports results. Distinct from compiling, linting, and formatting.
 mode: subagent
 permission:
   read: allow

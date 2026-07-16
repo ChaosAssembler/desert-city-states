@@ -1,5 +1,5 @@
 ---
-description: Explores the codebase systematically to understand structure, architecture, and patterns
+description: Use when you need to understand the codebase. Finds files, traces architecture, locates implementations, and answers where or how something works. Read-only investigation that never edits files.
 mode: subagent
 permission:
   read: allow

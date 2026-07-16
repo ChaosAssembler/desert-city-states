@@ -1,5 +1,5 @@
 ---
-description: Web research agent that searches the web and returns structured findings
+description: Performs open-ended web research. Searches the web and returns structured findings on a topic. Use for discovery rather than fetching a known page.
 mode: subagent
 permission:
   websearch: allow

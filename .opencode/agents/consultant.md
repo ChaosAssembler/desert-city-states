@@ -1,5 +1,5 @@
 ---
-description: Knowledge consultant that loads skill files to provide expert guidance on the correct approach for any task
+description: Provides expert guidance on how to approach a task by loading skill files and advising. Guidance only. Never executes tasks or edits files.
 mode: subagent
 permission:
   skill: allow

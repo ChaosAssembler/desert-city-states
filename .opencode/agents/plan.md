@@ -1,5 +1,5 @@
 ---
-description: Creates structured execution plans by exploring the codebase through read-only subagents
+description: Turns a goal into a structured, actionable execution plan by exploring the codebase through read-only subagents. Delegates work and never edits directly.
 mode: primary
 permission:
   task:

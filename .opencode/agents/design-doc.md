@@ -1,5 +1,5 @@
 ---
-description: Creates and maintains game design documentation in docs/design/
+description: Creates or maintains game design documentation under docs/design/. Covers mechanics, gameplay, and fiction. Distinct from technical architecture and implementation specs.
 mode: subagent
 permission:
   read:

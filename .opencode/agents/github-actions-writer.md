@@ -1,5 +1,5 @@
 ---
-description: Writes and maintains GitHub Actions CI/CD workflow YAML and composite action definitions, mirroring the project's local mise and cargo verification
+description: Creates or maintains GitHub Actions CI/CD workflows and composite action definitions, mirroring the project's local mise and cargo verification.
 mode: subagent
 permission:
   read: allow

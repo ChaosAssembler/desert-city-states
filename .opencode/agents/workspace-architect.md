@@ -1,5 +1,5 @@
 ---
-description: Manages Rust workspace architecture, crate manifests, and Cargo dependencies
+description: Changes workspace structure. Manages Cargo.toml manifests, crate layout, dependencies, and toolchain or cargo config. Does not write crate source code.
 mode: subagent
 permission:
   read: allow

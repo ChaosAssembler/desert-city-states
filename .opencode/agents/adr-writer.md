@@ -1,5 +1,5 @@
 ---
-description: Creates and maintains Architecture Decision Records in docs/architecture/decisions/
+description: Records or updates Architecture Decision Records under docs/architecture/decisions/. Captures why a structural or technical choice was made. Not for specs or general documentation.
 mode: subagent
 permission:
   read:

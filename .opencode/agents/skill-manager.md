@@ -1,5 +1,5 @@
 ---
-description: Creates and maintains OpenCode skill files under .opencode/skills/
+description: Creates or edits OpenCode skill files under .opencode/skills/. Handles skill authoring and maintenance only.
 mode: subagent
 permission:
   read:

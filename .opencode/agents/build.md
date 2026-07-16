@@ -1,5 +1,5 @@
 ---
-description: Performs development tasks by delegating to subagents
+description: Task coordinator and orchestrator. Delegates all work to subagents and never edits directly. The default entry point for execution.
 mode: primary
 permission:
   task: allow

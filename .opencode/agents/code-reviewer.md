@@ -1,5 +1,5 @@
 ---
-description: Reviews Rust source code in crates/ for correctness, architecture-convention adherence, and quality, reporting findings without modifying files
+description: Reviews Rust source under crates/ for correctness, convention adherence, and quality before merging. Read-only. Reports issues and never edits or builds.
 mode: subagent
 permission:
   read: allow

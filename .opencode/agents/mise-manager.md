@@ -1,5 +1,5 @@
 ---
-description: Manages development tools via mise — install, upgrade, uninstall, and query tool versions in mise.toml
+description: Installs, upgrades, or uninstalls development tools and edits mise.toml through mise. Touches only mise.toml.
 mode: subagent
 permission:
   read:

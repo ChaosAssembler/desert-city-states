@@ -1,5 +1,5 @@
 ---
-description: Maintains OpenCode agent configuration files
+description: Designs, creates, or modifies OpenCode agent configuration files under .opencode/agents/. Handles agent setup only.
 mode: subagent
 permission:
   webfetch: allow

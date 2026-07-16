@@ -1,5 +1,5 @@
 ---
-description: Fetches web pages and extracts structured content from URLs
+description: Fetches a specific known URL and extracts its structured content. Use for retrieving a page you already know, not for open-ended discovery.
 mode: subagent
 permission:
   webfetch: allow

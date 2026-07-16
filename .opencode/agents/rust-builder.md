@@ -1,5 +1,5 @@
 ---
-description: Runs the Rust build, lint (clippy), and format checks across the workspace and reports results
+description: Compiles, lints with clippy, and format-checks the Rust workspace, then reports results. Build and static-check only. Does not run the test suite or write source.
 mode: subagent
 permission:
   read: allow

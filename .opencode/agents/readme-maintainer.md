@@ -1,5 +1,5 @@
 ---
-description: Maintains the project's root README and keeps it consistent with docs, the workspace layout, and the agent and skill setup
+description: Creates or updates the root README and keeps it consistent with docs, the workspace layout, and the agent and skill setup.
 mode: subagent
 permission:
   read: allow
