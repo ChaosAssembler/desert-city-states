@@ -47,25 +47,23 @@ Load the `planning` skill for planning document conventions.
 
 ## Review checklist
 
-### Structural checks (from doc-consistency)
-1. Cross-reference integrity — resolve every DD §, ARCH §, ADR-nnnn, relative link, and bare §; verify targets exist
-2. Spec metadata — Implements header, References section, README index sync, orphan check
-3. ADR metadata — status field, sequential zero-padded numbering
-4. Terminology alignment — flag mismatches between cross-referencing terms and target headings
-5. Bidirectional references — flag one-directional heavy references
-
-### Domain-specific checks (from doc skills)
-6. Spec compliance — correct template structure, task list format, acceptance criteria per spec-driven-development
-7. Architecture doc compliance — concrete file paths, one-topic-per-doc, Mermaid usage per architecture-doc
-8. Design doc compliance — balance tables, status field, design-vs-implementation separation per design-doc
-9. ADR compliance — correct template sections (Status/Date/Context/Decision/Alternatives/Consequences) per adr
-10. Planning doc compliance — status indicators, phase structure, cross-references per planning
-
-### Markdown syntax checks (markdownlint — distinct from semantic/cross-reference checks above)
-11. Run the markdown linter on the docs under review:
-    - Preferred: `mise run lint-md`
-    - Fallback if mise is unavailable: `markdownlint-cli2 "docs/**/*.md"`
-    - Report any markdownlint syntax violations in the review report, integrated with the `review-reporting` structured format. Keep these separate from the semantic/cross-reference findings above.
+1. Structural checks (from doc-consistency)
+   - Cross-reference integrity — resolve every DD §, ARCH §, ADR-nnnn, relative link, and bare §; verify targets exist
+   - Spec metadata — Implements header, References section, README index sync, orphan check
+   - ADR metadata — status field, sequential zero-padded numbering
+   - Terminology alignment — flag mismatches between cross-referencing terms and target headings
+   - Bidirectional references — flag one-directional heavy references
+2. Domain-specific checks (from doc skills)
+   - Spec compliance — correct template structure, task list format, acceptance criteria per spec-driven-development
+   - Architecture doc compliance — concrete file paths, one-topic-per-doc, Mermaid usage per architecture-doc
+   - Design doc compliance — balance tables, status field, design-vs-implementation separation per design-doc
+   - ADR compliance — correct template sections (Status/Date/Context/Decision/Alternatives/Consequences) per adr
+   - Planning doc compliance — status indicators, phase structure, cross-references per planning
+3. Markdown syntax checks (markdownlint — distinct from semantic/cross-reference checks above)
+   - Run the markdown linter on the docs under review:
+     - Preferred: `mise run lint-md`
+     - Fallback if mise is unavailable: `markdownlint-cli2 "docs/**/*.md"`
+     - Report any markdownlint syntax violations in the review report, integrated with the `review-reporting` structured format. Keep these separate from the semantic/cross-reference findings above.
 
 ## Output format
 
