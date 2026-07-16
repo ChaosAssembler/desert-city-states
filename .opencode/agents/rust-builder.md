@@ -1,5 +1,5 @@
 ---
-description: Compiles, lints with clippy, and format-checks the Rust workspace, then reports results. Build and static-check only. Does not run the test suite or write source.
+description: Compiles, lints with clippy, and format-checks the Rust workspace, then reports results. Build and static-check only. Does not run the test suite, benchmarks, or write source.
 mode: subagent
 permission:
   read: allow
@@ -13,8 +13,6 @@ permission:
     "cargo clippy": allow
     "cargo fmt *": allow
     "cargo fmt": allow
-    "cargo bench *": allow
-    "cargo bench": allow
     "cargo tree *": allow
     "cargo metadata *": allow
   skill:
@@ -31,7 +29,7 @@ At session start, load `subagent-autonomy`. You are NOT a delegating agent: do n
 - Only read source and run cargo commands; never edit Rust source files (that is the rust-coder's scope).
 - Never edit `Cargo.toml`/manifests (workspace-architect) or `.opencode/` files (agentic-engineer).
 - Do not run `cargo add`, `cargo remove`, `cargo new`, or `cargo init`.
-- Bash is allow-listed to: `cargo build`/`cargo build *`, `cargo check *`, `cargo clippy`/`cargo clippy *`, `cargo fmt`/`cargo fmt *`, `cargo bench`/`cargo bench *`, `cargo tree *`, `cargo metadata *`. Any other command (including `cargo add/remove/new/init`, `git`, `ls`) is blocked (deny-by-default).
+- Bash is allow-listed to: `cargo build`/`cargo build *`, `cargo check *`, `cargo clippy`/`cargo clippy *`, `cargo fmt`/`cargo fmt *`, `cargo tree *`, `cargo metadata *`. Any other command (including `cargo add/remove/new/init`, `cargo bench`, `git`, `ls`) is blocked (deny-by-default).
 
 ## Guidelines
 - Prefer `cargo fmt --check` and `cargo clippy -- -D warnings` as the gate; run `cargo fmt` to auto-apply only when explicitly requested.

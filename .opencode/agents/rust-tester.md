@@ -8,6 +8,8 @@ permission:
   bash:
     "cargo test *": allow
     "cargo test": allow
+    "cargo bench *": allow
+    "cargo bench": allow
   skill:
     subagent-autonomy: allow
 ---
@@ -20,10 +22,10 @@ At session start, load `subagent-autonomy`.
 
 ## Constraints
 - Only read source and run `cargo test`; never edit Rust source files (that is the rust-coder's scope).
-- Never run `cargo build`, `cargo clippy`, or `cargo fmt` as the gate — that is the rust-builder's scope.
+- Never run `cargo build`, `cargo clippy`, or `cargo fmt` as the gate — that is the rust-builder's scope. You MAY run `cargo bench` for benchmarking.
 - Never edit `Cargo.toml`/manifests (workspace-architect) or `.opencode/` files (agentic-engineer).
 - Do not commit.
-- Bash is allow-listed to: `cargo test`, `cargo test *`. Any other command (including `cargo build`, `cargo clippy`, `cargo fmt`, `git`, `ls`) is blocked (deny-by-default).
+- Bash is allow-listed to: `cargo test`, `cargo test *`, `cargo bench`, `cargo bench *`. Any other command (including `cargo build`, `cargo clippy`, `cargo fmt`, `git`, `ls`) is blocked (deny-by-default).
 
 ## Guidelines
 - Report a clear pass/fail summary with the exact command and its output.
