@@ -27,7 +27,7 @@ only — no `Cargo.toml`, `.rs`, or code is created here.
 Per the planning convention, only one phase is active at a time.
 
 - [x] **Phase 0 — Workspace scaffold**
-- [~] **Phase 1 — Foundation (dcs-core)** — active / next
+- [x] **Phase 1 — Foundation (dcs-core)** — done
 - [ ] Phase 2 — Gameplay systems (dcs-core)
 - [ ] Phase 3 — Behavior (dcs-core)
 - [ ] Phase 4 — Presentation (dcs-render + dcs-app)

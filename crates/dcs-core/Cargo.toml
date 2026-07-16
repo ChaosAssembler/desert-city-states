@@ -7,3 +7,10 @@ description = "Pure deterministic simulation core for Desert City-States"
 
 [dependencies]
 dcs-protocol = { path = "../dcs-protocol" }
+serde = { version = "1", features = ["derive"] }
+fxhash = "0.2"
+thiserror = "1"
+nanorand = { version = "0.7", features = ["std"] }
+postcard = { version = "1", features = ["use-std"] }
+bincode = "1"
+serde_json = "1"

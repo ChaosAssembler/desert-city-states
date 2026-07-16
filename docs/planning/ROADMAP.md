@@ -92,7 +92,7 @@ boundaries rather than convention.
 
 ## Phase 1 — Foundation (dcs-core)
 
-- [~] **In progress (next milestone)**
+- [x] **Done**
 
 ### Goal
 
