@@ -6,7 +6,7 @@
 > **Theme:** Rival oasis city-states in a harsh desert
 > **Platform:** Browser/PC, turn-based
 > **Rendering decision (confirmed):** 2D **graphical** rendering (not terminal/TUI). Presentation guidance below is written for 2D, but the underlying design is kept engine-agnostic so the eventual architecture can swap renderers/backends.
-> **Single source of truth:** This document defines *what* the game is. Companion docs define how it is built: `docs/architecture/` (ARCHITECTURE.md), `docs/architecture/decisions/` (8 ADRs, 0001–0008), `docs/specs/` (15 per-system technical specs), and `docs/planning/` (ROADMAP.md).
+> **Single source of truth:** This document defines *what* the game is. Companion docs define how it is built: `docs/architecture/` (ARCHITECTURE.md), `docs/architecture/decisions/` (8 ADRs, 0001–0008), `docs/specs/` (16 per-system technical specs), and `docs/planning/` (ROADMAP.md).
 
 ---
 
@@ -558,4 +558,4 @@ MVP = small map, fog, 3 resources, 3 units, 1 generic city + simple upgrades, ca
 
 ---
 
-*End of Document — Draft v1.0. Companion docs: `docs/architecture/` (ARCHITECTURE.md), `docs/architecture/decisions/` (8 ADRs 0001–0008), `docs/specs/` (15 per-system specs), and `docs/planning/` (ROADMAP.md).*
+*End of Document — Draft v1.0. Companion docs: `docs/architecture/` (ARCHITECTURE.md), `docs/architecture/decisions/` (8 ADRs 0001–0008), `docs/specs/` (16 per-system specs), and `docs/planning/` (ROADMAP.md).*

@@ -530,7 +530,7 @@ returned.
 | **Own units** | Always visible |
 | **Own cities** | Always visible |
 | **Enemy units** | Visible only if their current tile is in the observing player's discovered set |
-| **Enemy cities** | Visible once **any** tile adjacent to the city is discovered; remains visible permanently afterward (static visibility) |
+| **Enemy cities** | Visible once **any** tile adjacent to the city OR any tile of any of its routes' paths is discovered; remains visible permanently afterward (static visibility) |
 | **Enemy routes** | Visible if **any** path tile is discovered; path tiles themselves are never revealed, only endpoint city IDs and status |
 | **Relics** | Visible on tiles in the discovered set |
 
@@ -883,7 +883,7 @@ Events returned in the `events` array of an `act` response:
 | `RouteRaided` | `route: RouteId, by: PlayerId, severed: bool` | `{"type":"RouteRaided","route":<u32>,"by":<u32>,"severed":true}` |
 | `CityRaided` | `city: CityId, by: PlayerId, pop_lost: u32` | `{"type":"CityRaided","city":<u32>,"by":<u32>,"pop_lost":1}` |
 | `Combat` | `attacker: UnitId, defender: UnitId, attacker_loss: u32, defender_loss: u32, retreated: bool` | `{"type":"Combat","attacker":<u32>,"defender":<u32>,"attacker_loss":1,"defender_loss":2,"retreated":false}` |
-| `Income` | `player: PlayerId, water: u32, wealth: u32, influence: i32` | `{"type":"Income","player":<u32>,"water":2,"wealth":1,"influence":0}` |
+| `Income` | `player: PlayerId, water: i32, wealth: i32, influence: i32` | `{"type":"Income","player":<u32>,"water":2,"wealth":1,"influence":0}` |
 | `Grown` | `city: CityId, population: u32` | `{"type":"Grown","city":<u32>,"population":2}` |
 | `Starved` | `city: CityId, population: u32` | `{"type":"Starved","city":<u32>,"population":0}` |
 | `Revealed` | `player: PlayerId, tiles: Vec<TileId>` | `{"type":"Revealed","player":<u32>,"tiles":[<u32>,...]}` |

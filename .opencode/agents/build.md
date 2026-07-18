@@ -1,5 +1,5 @@
 ---
-description: Task coordinator and orchestrator. Delegates all work to subagents and never edits directly. The default entry point for execution.
+description: Execution coordinator. Delegates every task to the appropriate subagent via the task tool; invoke explicitly when execution is requested.
 mode: primary
 permission:
   task: allow

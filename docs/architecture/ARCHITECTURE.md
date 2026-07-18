@@ -1,10 +1,10 @@
 # Desert City-States — Software Architecture
 
-> **Status:** Draft (Phase 2 of planning — architecture)
+> **Status:** Planning reference + as-built architecture (Phases 0–3 implemented; Phase 4 in progress).
 > **Version:** 1.0
 > **Source of truth for game behavior:** `docs/design/Desert-City-States.md` (the Design Document, "DD")
 > **Companion docs:** `docs/planning/` (ROADMAP.md and per-system technical specs), `docs/architecture/decisions/` (ADRs)
-> **Scope of this document:** This is a *planning* artifact. It describes the **intended** structure precisely so a workspace can be scaffolded later. **No Cargo.toml, no `.rs` files, and no scaffolding are produced by this phase.**
+> **Scope of this document:** This is a *planning* artifact that now also serves as as-built reference. It was originally written to describe the **intended** structure so a workspace could be scaffolded. The planning phase itself produced no scaffolding; the implementation phases since then have (the workspace is now scaffolded with crates, `Cargo.toml`, and `.rs` files for foundation, gameplay, and behavior).
 
 ---
 

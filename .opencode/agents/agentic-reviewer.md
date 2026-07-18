@@ -45,6 +45,7 @@ Load the `customize-opencode` skill for accurate OpenCode configuration schemas.
 ## Review checklist
 
 ### Agent files (.opencode/agents/*.md)
+
 1. Frontmatter — required fields: description, mode, permission, skill
 2. Mode — valid value: primary or subagent
 3. Permissions — deny-by-default; no unnecessary grants; bash patterns scoped appropriately
@@ -53,16 +54,21 @@ Load the `customize-opencode` skill for accurate OpenCode configuration schemas.
 6. Delegation depth — subagents with task permission name specific agents only
 
 ### Skill files (.opencode/skills/*/SKILL.md)
-7. Frontmatter — name matches directory; description uses "Use when..." phrasing
-8. Content — agent-agnostic; no scope constraints; no "ask the user" instructions
-9. Structure — Rules → Workflow → Conventions
-10. Self-contained — no dependencies on other skill files
+
+1. Frontmatter — name matches directory; description uses "Use when..." phrasing
+2. Content — agent-agnostic; no scope constraints; no "ask the user" instructions
+3. Structure — Rules → Workflow → Conventions
+4. Self-contained — no dependencies on other skill files
 
 ### System-wide checks
-11. opencode.json consistency — all referenced agents exist; no orphaned agent files
-12. Cross-system redundancy — no behavioral rules duplicated between agent constraints and skills
-13. Naming conventions — descriptive kebab-case filenames; skill directory names match skill names
-14. Permission granularity — no subagent broader than necessary for its role
+
+> Convention: agents are auto-discovered from `.opencode/agents/*.md` files. There is intentionally NO explicit `agents` registry in `opencode.json` (confirmed — `opencode.json` has no `agents` key). Validate agent references against the discovered `.opencode/agents/*.md` files, not against an `agents` key in `opencode.json`.
+
+1. opencode.json consistency — all referenced agents exist; no orphaned agent files
+   - Validate each referenced agent name against the `.opencode/agents/*.md` files present in the directory (auto-discovery), since `opencode.json` carries no agent registry.
+2. Cross-system redundancy — no behavioral rules duplicated between agent constraints and skills
+3. Naming conventions — descriptive kebab-case filenames; skill directory names match skill names
+4. Permission granularity — no subagent broader than necessary for its role
 
 ## Output format
 

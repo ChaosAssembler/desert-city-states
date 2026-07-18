@@ -21,7 +21,7 @@ implementation and consistent with the design doc and the 8 ADRs. No `.rs` or
 | Scenario Config | [foundation-scenario-config.md](./foundation-scenario-config.md) | dcs-core (`scenario`) | DD §5.2,§13,§16.2; ARCH §11; ADR-0003/0007 | Draft for review |
 | Save / Load | [foundation-save-load.md](./foundation-save-load.md) | dcs-core (`serialize`) + dcs-protocol | DD §5.4; ARCH §7; ADR-0007 | Draft for review |
 
-### Gameplay group (Phase 3)
+### Gameplay group (Phase 2)
 
 | Spec | File | Crate | Implements | Status |
 |---|---|---|---|---|
@@ -32,12 +32,17 @@ implementation and consistent with the design doc and the 8 ADRs. No `.rs` or
 | Combat | [gameplay-combat.md](./gameplay-combat.md) | dcs-core (`combat`) | DD §10; ARCH §5,§16; ADR-0004/0006 | Draft for review |
 | Fog of War | [gameplay-fog-of-war.md](./gameplay-fog-of-war.md) | dcs-core (`fog`) | DD §12; ARCH §12; ADR-0003/0004 | Draft for review |
 
-### Behavior & Presentation group (Phase 3)
+### Behavior group (Phase 3)
 
 | Spec | File | Crate | Implements | Status |
 | --- | --- | --- | --- | --- |
 | AI Opponents | [behavior-ai-opponents.md](./behavior-ai-opponents.md) | dcs-core (`ai`) | DD §11; ARCH §9; ADR-0003/0004/0006 | Draft for review |
 | Victory Conditions | [behavior-victory-conditions.md](./behavior-victory-conditions.md) | dcs-core (`victory`) | DD §13; ARCH §13; ADR-0003/0004/0006 | Draft for review |
+
+### Presentation group (Phase 4)
+
+| Spec | File | Crate | Implements | Status |
+| --- | --- | --- | --- | --- |
 | Rendering & UI | [presentation-rendering-ui.md](./presentation-rendering-ui.md) | dcs-render + dcs-app | DD §3; ARCH §8; ADR-0001/0003/0004/0005 | Draft for review |
 | Agent Protocol | [presentation-agent-protocol.md](./presentation-agent-protocol.md) | dcs-app (stdin/stdout) | DD §3; ARCH §8; ADR-0003/0004 | Draft for review |
 

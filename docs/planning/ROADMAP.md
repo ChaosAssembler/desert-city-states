@@ -151,9 +151,12 @@ from a seed, step turns headlessly, and round-trip state. Heavy unit testing.
   `nanorand` (ADR-0006). The RNG state lives in `GameState` and serializes.
 - **Save format (ARCH OQ-5):** default **json for dev**, **postcard for ship**,
   both behind `serialize` (ADR-0007). Pick the concrete ship default now.
-- **Contested-raid order (DD #6 / OQ-3):** codify the engine rule — **first-come
-  in actor order** (turn-engine spec §6.6) — so all later phases rely on it.
-  Final *design sign-off* is validated in Phase 5 playtest.
+- **Contested-raid order (DD #6 / OQ-3):** adopt the spec's **recommended default
+  — first-come in actor order** (turn-engine spec §6.6) — as the working engine
+  rule so all later phases rely on it, but note this is **OPEN / flagged for
+  design sign-off, not resolved here** (turn-engine §6.6 + Open Questions;
+  combat §6.3 + Open Questions). Final *design sign-off* happens at the **Phase 5
+  playtest**.
 
 ### Exit / Definition of Done
 
@@ -490,7 +493,7 @@ Complete the full game per DD §17.2, enabling deferred content and polish.
 |---|---|---|---|
 | PRNG crate choice | ARCH OQ-6 / ADR-0006 | **1** | `nanorand` vs `rand::StdRng`; recommend `nanorand`. RNG state in `GameState`. |
 | Save format (json vs postcard/bincode) | ARCH OQ-5 / ADR-0007 | **1** | json dev, postcard ship, behind `serialize`. |
-| Contested-raid resolution order | DD #6 / OQ-3 | **1** (rule) → **5** (sign-off) | First-come in actor order (turn-engine §6.6); validated in playtest. |
+| Contested-raid resolution order | DD #6 / OQ-3 | **1** (rule, recommended default) → **5** (sign-off) | Recommended default: first-come in actor order (turn-engine §6.6); OPEN, flagged for design sign-off — final sign-off at Phase 5 playtest. |
 | Hex-grid-math spec | specs index / ADR-0005 | **1** | Spec `foundation-hex-grid-math.md` exists under `docs/specs/`; implement `dcs-core::hex` from ARCH §4 + ADR-0005. |
 | Scout-can-found vs Founder | DD #4 / OQ-2 | **2** | Recommended default: `Scout` can found (`is_founding_unit`). |
 | Route planning through fog | fog spec §6.3 | **2** | Default: `ConnectRoute` rejected if path crosses unexplored tile. |
