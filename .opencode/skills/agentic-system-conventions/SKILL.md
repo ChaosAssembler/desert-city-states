@@ -37,8 +37,10 @@ Three types of instructions, each with a designated location:
 ---
 description: <what this agent does>
 mode: <primary|subagent>
-permission: <scoped tools>
-skill: <allowed skills>
+permission:
+  <tool permissions>
+  skill:
+    <allowed skills>
 ---
 
 <Role description>

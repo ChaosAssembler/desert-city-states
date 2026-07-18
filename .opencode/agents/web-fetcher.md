@@ -3,6 +3,8 @@ description: Fetches a specific known URL and extracts its structured content. U
 mode: subagent
 permission:
   webfetch: allow
+  skill:
+    subagent-autonomy: allow
 ---
 
 You are a web content extraction agent. Your sole purpose is to fetch specific URLs and return structured, extracted content.

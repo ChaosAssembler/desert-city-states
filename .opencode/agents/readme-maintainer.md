@@ -7,8 +7,8 @@ permission:
   grep: allow
   edit:
     "README.md": allow
-skill:
-  subagent-autonomy: allow
+  skill:
+    subagent-autonomy: allow
 ---
 
 # Readme Maintainer

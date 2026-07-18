@@ -31,8 +31,28 @@ description: Use when creating or maintaining OpenCode agent files under .openco
 ## Conventions
 
 - Agent files: `.opencode/agents/<agent-name>.md`
-- Frontmatter: `description`, `mode`, `permission`, `skill`
+- Frontmatter: `description`, `mode`, `permission`
 - Body structure: role description → skill loading → Constraints (scope) → Guidelines (quality, optional)
 - Load `subagent-autonomy` skill at session start for subagents
 - Constraints use imperative voice: "Never do X", "Only work within Y"
 - Guidelines (if present) use imperative voice: "Focus on...", "If X, say so"
+
+### Description field
+
+The `description` is shown to the delegating agent. Write it to answer: "When should I delegate to this agent?" Include:
+- What the agent does (its purpose)
+- What it does NOT do (scope boundaries)
+- Whether it is read-only or read-write
+
+Examples:
+- "Reviews Rust source under crates/ for correctness, convention adherence, and quality before merging. Read-only. Reports issues and never edits or builds."
+- "Compiles, lints with clippy, and format-checks the Rust workspace, then reports results. Build and static-check only. Does not run the test suite, benchmarks, or write source."
+
+### Communicating permissions in the body
+
+After the frontmatter, restate key permission restrictions in the body so the subagent understands its boundaries without parsing YAML. Use these patterns:
+
+- **Bash allow-list**: "Bash is allow-listed to: `mkdir *`, `ls *`. Any other command is blocked (deny-by-default)."
+- **No bash access**: "No bash/shell access — do not attempt to run commands; rely only on read, glob, and grep."
+- **Read-only**: "Read-only. Never attempt to edit or create files."
+- **File scope**: "Only create and modify files under `docs/design/`"
