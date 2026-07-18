@@ -1,9 +1,9 @@
 # Desert City States — Implementation Roadmap
 
-> **Status:** Planning doc 4 of 4 — phased implementation plan. Implementation status: Phase 0 complete, Phase 1 complete, Phase 2 complete, Phase 3 next.
+> **Status:** Planning doc 4 of 4 — phased implementation plan. Implementation status: Phase 0 complete, Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 next.
 > **Source of truth for behavior:** `docs/design/Desert-City-States.md` (DD)
 > **Architecture:** `docs/architecture/ARCHITECTURE.md` + `docs/architecture/decisions/` (ADR-0001…0008)
-> **Specs (binding):** `docs/specs/README.md` and the 15 spec files
+> **Specs (binding):** `docs/specs/README.md` and the 16 spec files
 > **Tooling-agnostic:** milestones are ordered, not calendar-dated. Map to time per your cadence.
 
 This roadmap sequences work by the dependency order implied by the specs and
@@ -252,7 +252,7 @@ units/movement, combat, fog of war, and the signature caravan/route system.
 
 ## Phase 3 — Behavior (dcs-core)
 
-- [~] **In Progress**
+- [x] **Done**
 
 ### Goal
 
@@ -275,8 +275,8 @@ conclusion, exercising the signature route mechanic as opponents (DD §18 OQ-7).
 
 ### Key deliverables
 
-- [ ] `docs/specs/behavior-victory-conditions.md` → `dcs-core::victory`
-- [ ] `docs/specs/behavior-ai-opponents.md` → `dcs-core::ai`
+- [x] `docs/specs/behavior-victory-conditions.md` → `dcs-core::victory`
+- [x] `docs/specs/behavior-ai-opponents.md` → `dcs-core::ai`
 
 ### Dependencies
 
@@ -285,27 +285,22 @@ conclusion, exercising the signature route mechanic as opponents (DD §18 OQ-7).
 
 ### Open questions resolved / validated in this phase
 
-- **V2 prestige formula (victory spec §6.2 / §10):** decide between the literal
-  DD `Wealth×1+Influence×2` and the spec's generalized territory+route formula
-  (recoverable via weights = 0). Recommended: keep the generalized form as
-  implemented, with weights tunable in Phase 5.
-- **`VictoryKind::TurnLimit` variant (victory spec §6.5 / §10):** decide whether
-  the turn-limit fallback needs a distinct `VictoryKind` or reuses `WealthScore`.
+- **V2 prestige formula (victory spec §6.2 / §10):** **RESOLVED** — Generalized territory+route formula used (weights: Wealth×1.0, Influence×2.0, Oasis×8.0, Route×4.0). Literal DD formula recoverable by setting route/oasis weights to zero. Tunable in Phase 5.
+- **`VictoryKind::TurnLimit` variant (victory spec §6.5 / §10):** RESOLVED — implemented as a distinct VictoryKind. Returned when no player meets the V1/V2/V3 thresholds by the turn limit. Winner determined by highest prestige score, with ties broken by more oases, then lower PlayerId.
 
 ### Exit / Definition of Done
 
-- [ ] `ai_plan` is pure (`&GameState` → `Vec<Command>`), returns **no** `EndTurn`,
+- [x] `ai_plan` is pure (`&GameState` → `Vec<Command>`), returns **no** `EndTurn`,
   and every emitted command passes `validate` (ai spec §8).
-- [ ] AI emits `ConnectRoute` between unconnected own cities (fog-legal) and
+- [x] AI emits `ConnectRoute` between unconnected own cities (fog-legal) and
   `Patrol` on exposed/threatened routes under Normal/Hard (`defend_core_routes`);
   Easy defends a bit, less reliably (OQ-7 resolved) (ai spec §8).
-- [ ] AI never targets an enemy unit/city/route hidden by its own fog (no-cheat
+- [x] AI never targets an enemy unit/city/route hidden by its own fog (no-cheat
   test) (ai spec §8).
-- [ ] A full headless game (`--headless` flag) with 2–3 AI ends in a `Victory`
-  event: V1 majority/elimination, or turn-limit fallback by prestige score.
-- [ ] Victory meters (`state.victory`) update each end-of-turn; same
-  `(scenario, seed, commands)` ⇒ identical outcome (victory spec §8).
-- [ ] `cargo test -p dcs-core` green; CI `cargo tree` gate still green.
+- [x] A full headless game with 2–3 AI ends in a Victory event: V1 majority/elimination, or turn-limit fallback by prestige score. (Verified in turn.rs integration tests; --headless CLI flag deferred to Phase 4 in dcs-app.)
+- [x] Victory meters (state.victory) update each end-of-turn; same
+  (scenario, seed, commands) => identical outcome (victory spec §8).
+- [x] cargo test -p dcs-core green; CI cargo tree gate green.
 
 ---
 
@@ -330,6 +325,7 @@ playable** (human vs AI) on a small map. Renderer reads `GameState`, emits
 - `dcs-app` — `main()`, `run()` orchestration loop (poll→step→advance_turn→draw;
   sim advances only on `EndTurn`), save/load menu wiring to `dcs-protocol` +
   `dcs-core::serialize`.
+- Add `--headless` CLI flag for automated smoke-testing and benchmark runs (core supports headless loops in tests; flag wires into `dcs-app::run`).
 
 ### Out of scope
 
@@ -468,8 +464,8 @@ Complete the full game per DD §17.2, enabling deferred content and polish.
 | Scout-can-found vs Founder | DD #4 / OQ-2 | **2** | Recommended default: `Scout` can found (`is_founding_unit`). |
 | Route planning through fog | fog spec §6.3 | **2** | Default: `ConnectRoute` rejected if path crosses unexplored tile. |
 | Balance numbers (isolation −2, synergy +10%, all tables) | DD #3 / OQ-1 | **2** (enter) → **5** (tune) → **6** | Tunable tables; first pass entered Phase 2, tuned in playtest. |
-| V2 prestige formula (generalized vs literal) | victory spec §6.2/§10 | **3** | Keep generalized; literal recoverable via weights=0. |
-| `VictoryKind::TurnLimit` variant | victory spec §6.5/§10 | **3** (or **5**) | Reuses `WealthScore` unless UI wants distinct kind. |
+| V2 prestige formula (generalized vs literal) | victory spec §6.2/§10 | **3 (resolved)** | Keep generalized; literal recoverable via weights=0. |
+| `VictoryKind::TurnLimit` variant | victory spec §6.5/§10 | **3 (resolved)** | Reuses `WealthScore` unless UI wants distinct kind. |
 | Single-screen vs zoom/pan | DD #10 / OQ-4 | **4** | Default: zoom/pan `Camera2D` + `fit_map`; MVP fits one screen by default. |
 | egui vs macroquad built-in UI | render spec §10 / ARCH §14.2.3 | **4** | macroquad built-in for MVP; egui fallback if needed. |
 

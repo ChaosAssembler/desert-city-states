@@ -1,6 +1,6 @@
 # Desert City States — Planning Index
 
-> **Status:** Planning doc 4 of 4 — implementation roadmap. Implementation status: Phase 0 complete, Phase 1 complete, Phase 2 complete, Phase 3 active.
+> **Status:** Planning doc 4 of 4 — implementation roadmap. Implementation status: Phase 0 complete, Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 next.
 > Companion to `docs/design/`, `docs/architecture/`, `docs/architecture/decisions/`, and `docs/specs/`.
 
 This directory holds the phased implementation plan. All plans are documentation
@@ -27,10 +27,10 @@ only — no `Cargo.toml`, `.rs`, or code is created here.
 Per the planning convention, only one phase is active at a time.
 
 - [x] **Phase 0 — Workspace scaffold**
-- [x] **Phase 1 — Foundation (dcs-core)** — done
-- [x] **Phase 2 — Gameplay systems (dcs-core)** — done
-- [~] Phase 3 — Behavior (dcs-core) — **In Progress** — behavior
-- [ ] Phase 4 — Presentation (dcs-render + dcs-app)
+- [x] **Phase 1 — Foundation (dcs-core)**
+- [x] **Phase 2 — Gameplay systems (dcs-core)**
+- [x] **Phase 3 — Behavior (dcs-core)**
+- [~] Phase 4 — Presentation (dcs-render + dcs-app) — **In Progress**
 - [ ] Phase 5 — MVP integration & playtest
 - [ ] Phase 6 — Full scope / stretch
 
