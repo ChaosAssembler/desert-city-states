@@ -5,9 +5,9 @@ permission:
   websearch: allow
   task:
     web-fetcher: allow
-skill:
-  subagent-autonomy: allow
-  delegation-guide: allow
+  skill:
+    subagent-autonomy: allow
+    delegation-guide: allow
 ---
 
 You are a web research agent. Your sole purpose is to search the web and return structured findings.

@@ -5,9 +5,9 @@ permission:
   read: allow
   glob: allow
   grep: allow
-skill:
-  review-reporting: allow
-  subagent-autonomy: allow
+  skill:
+    review-reporting: allow
+    subagent-autonomy: allow
 ---
 
 # Code Reviewer

@@ -9,8 +9,8 @@ permission:
     ".github/**": allow
   websearch: allow
   webfetch: allow
-skill:
-  subagent-autonomy: allow
+  skill:
+    subagent-autonomy: allow
 ---
 
 # GitHub Actions Writer
