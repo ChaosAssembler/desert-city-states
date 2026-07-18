@@ -308,11 +308,23 @@ conclusion, exercising the signature route mechanic as opponents (DD §18 OQ-7).
 
 ### Goal
 
-Build the macroquad renderer and the glue app so the game is **visually
-playable** (human vs AI) on a small map. Renderer reads `GameState`, emits
-`Command`s only (Rule B / ADR-0003).
+Deliver a playable, testable game in two tracks: (1) an agent interface
+(`dcs-app --serve`) that enables OpenCode agents to play the game via a
+JSON-line protocol over stdin/stdout — and (2) the macroquad renderer and the
+glue app so the game is **visually playable** (human vs AI) on a small map.
+Both tracks are built from the same core (`dcs-core`), read `GameState`, and
+emit `Command`s only (Rule B / ADR-0003). The agent interface ships first to
+enable automated testing from Phase 4 day one.
 
-### In scope
+### In scope (track A — agent interface)
+
+- `dcs-app --serve` subcommand: long-lived process that reads newline-delimited JSON requests from stdin and writes JSON responses to stdout (spec: `presentation-agent-protocol.md`).
+- Dedicated agent protocol covering `new_game`, `claim_player`, `observe` (with fog-of-war filtering), `act` (with automatic AI turn processing), `save_game`, `load_game`, `help`, and `ping`.
+- Error responses with helpful, actionable hints for the agent (spec §7).
+- stderr reserved for logging; EOF on stdin triggers clean shutdown.
+- Single `GameState` per process; agent kills and restarts to begin a new game.
+
+### In scope (track B — macroquad presentation)
 
 - `dcs-render` — `Renderer` + `draw_frame(&self, &GameState, &UiView)`,
   `poll_input() -> Vec<Command>`, `screen_to_hex`, `Camera2D` pan/zoom reusing
@@ -333,16 +345,23 @@ playable** (human vs AI) on a small map. Renderer reads `GameState`, emits
 
 ### Key deliverables
 
-- [ ] `docs/specs/presentation-rendering-ui.md` → `dcs-render` + `dcs-app`
+- [x] `docs/specs/presentation-agent-protocol.md` → `dcs-app --serve` (agent protocol spec)
+- [ ] `docs/specs/presentation-rendering-ui.md` → `dcs-render` + `dcs-app` (graphical renderer spec)
 - [ ] ADR-0001 (macroquad; Bevy/egui fallback path documented)
 
 ### Dependencies
 
 - Phase 3 (core fully playable headless) + Phase 1 (`dcs-protocol` `Command`/
   `GameEvent`, save/load).
+- Track A (agent interface) additionally depends on opencode-pty plugin being installed and a game-tester agent being defined in `.opencode/`.
 
 ### Open questions resolved in this phase
 
+- **Agent protocol design (presentation-agent-protocol.md):** The agent protocol
+  JSON shapes, fog-of-war filtering rules, `act()` round semantics (full AI round
+  vs single actor), and error-hint format are specified in the protocol spec. The
+  initial implementation uses stdin/stdout; a REST HTTP bridge is deferred post-MVP.
+  Verify the protocol handles all edge cases in practice through agent playtesting.
 - **DD #10 screen/zoom (OQ-4):** adopt the render spec's recommended default —
   **zoom/pan via `Camera2D`**, with `fit_map` giving an initial whole-map view
   (radius-4 MVP fits one screen by default; full-scope pans/zooms). Confirm
@@ -350,7 +369,19 @@ playable** (human vs AI) on a small map. Renderer reads `GameState`, emits
 - **egui vs macroquad built-in UI:** macroquad built-in UI for MVP; egui fallback
   if HUD complexity grows (implementation-time render call).
 
-### Exit / Definition of Done
+### Exit / Definition of Done (Track A — Agent Interface)
+
+- [ ] `dcs-app --serve` starts, reads JSON requests from stdin, writes JSON responses to stdout, exits cleanly on EOF.
+- [ ] `new_game` accepts "mvp_preset" (and other named presets) and full `ScenarioConfig` objects.
+- [ ] `claim_player` selects a player; subsequent `act`/`observe` default to it.
+- [ ] `observe` returns fog-filtered state for all detail levels (full, resources, cities, units, routes, map, legal_actions, victory).
+- [ ] `act` processes the submitted commands, runs all AI turns automatically via `dcs-core::ai`, returns all events from the full round.
+- [ ] All error responses include a helpful hint field (spec §7).
+- [ ] `save_game` / `load_game` round-trip `GameState` through JSON serialization.
+- [ ] Game-over state is detectable by the agent (`observe` after victory returns an appropriate response).
+- [ ] `cargo test -p dcs-core` green; `cargo tree` gate still green.
+
+### Exit / Definition of Done (Track B — Macroquad Renderer)
 
 - [ ] `draw_frame` compiles with `state: &GameState` (no `&mut`); `poll_input`
   returns only `Command`s and never calls `step`/`advance_turn` (render spec §8).

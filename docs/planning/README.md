@@ -38,4 +38,4 @@ Per the planning convention, only one phase is active at a time.
 
 - Design: `docs/design/Desert-City-States.md`
 - Architecture: `docs/architecture/ARCHITECTURE.md` + `docs/architecture/decisions/` (ADR-0001…0008)
-- Specs: `docs/specs/README.md` (index of 15 specs + this roadmap)
+- Specs: `docs/specs/README.md` (index of 16 specs + this roadmap)

@@ -39,8 +39,9 @@ implementation and consistent with the design doc and the 8 ADRs. No `.rs` or
 | AI Opponents | [behavior-ai-opponents.md](./behavior-ai-opponents.md) | dcs-core (`ai`) | DD §11; ARCH §9; ADR-0003/0004/0006 | Draft for review |
 | Victory Conditions | [behavior-victory-conditions.md](./behavior-victory-conditions.md) | dcs-core (`victory`) | DD §13; ARCH §13; ADR-0003/0004/0006 | Draft for review |
 | Rendering & UI | [presentation-rendering-ui.md](./presentation-rendering-ui.md) | dcs-render + dcs-app | DD §3; ARCH §8; ADR-0001/0003/0004/0005 | Draft for review |
+| Agent Protocol | [presentation-agent-protocol.md](./presentation-agent-protocol.md) | dcs-app (stdin/stdout) | DD §3; ARCH §8; ADR-0003/0004 | Draft for review |
 
-## Cross-cutting invariants (all 15 per-system specs)
+## Cross-cutting invariants (all 16 per-system specs)
 
 - **Pure core:** `dcs-core` depends only on `dcs-protocol` + std/serde/rand. No macroquad/render/app (ADR-0003, ADR-0008).
 - **No ECS:** plain data + free functions over `GameState` (ADR-0002).
