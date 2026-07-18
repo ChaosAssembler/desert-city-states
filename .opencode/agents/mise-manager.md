@@ -51,8 +51,6 @@ permission:
     "mise * -f *": deny
     "mise * --cd *": deny
     "mise * -C *": deny
-  webfetch: allow
-  websearch: allow
   skill:
     mise-management: allow
     subagent-autonomy: allow
