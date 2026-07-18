@@ -883,7 +883,7 @@ mod tests {
 
     #[test]
     fn connected_city_count_disconnected() {
-        let mut s = make_game_with_two_cities();
+        let s = make_game_with_two_cities();
         // No active routes → no cities are connected.
         let count = connected_city_count(&s, PlayerId(0));
         assert_eq!(count, 0, "no routes means no connected cities");

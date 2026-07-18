@@ -23,7 +23,7 @@ run = "cargo fmt --all"
 
 [tasks.check]
 description = "Lint the workspace with clippy, treating warnings as errors"
-run = "cargo clippy --workspace -- -D warnings"
+run = "cargo clippy --workspace --all-targets -- -D warnings"
 
 [tasks.purity]
 description = "Fail if dcs-core pulls in macroquad / dcs-render / dcs-app (forbidden edges)"

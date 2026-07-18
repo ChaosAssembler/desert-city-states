@@ -32,7 +32,7 @@ At session start, load `subagent-autonomy`. You are NOT a delegating agent: do n
 - Bash is allow-listed to: `cargo build`/`cargo build *`, `cargo check *`, `cargo clippy`/`cargo clippy *`, `cargo fmt`/`cargo fmt *`, `cargo tree *`, `cargo metadata *`. Any other command (including `cargo add/remove/new/init`, `cargo bench`, `git`, `ls`) is blocked (deny-by-default).
 
 ## Guidelines
-- Prefer `cargo fmt --check` and `cargo clippy -- -D warnings` as the gate; run `cargo fmt` to auto-apply only when explicitly requested.
+- Prefer `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` as the gate; run `cargo fmt` to auto-apply only when explicitly requested.
 - When asked to verify dependency or purity boundaries, use `cargo tree` on the relevant crate and confirm its dependencies match the architecture's stated boundaries.
 - Report a clear pass/fail summary with the exact command and its output.
 - Surface warnings, not just errors.

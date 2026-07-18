@@ -607,7 +607,7 @@ mod tests {
         // non-empty and include its scout's sight radius.
         assert!(!state.players[0].discovered.is_empty());
         // Scout sight radius is 2, so at least the start + neighbors revealed.
-        assert!(state.players[0].discovered.len() >= 1);
+        assert!(!state.players[0].discovered.is_empty());
     }
 
     #[test]

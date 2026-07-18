@@ -827,7 +827,7 @@ mod tests {
 
     #[test]
     fn same_inputs_same_outputs() {
-        let mut make_state = || {
+        let make_state = || {
             let mut s = make_game();
             s.cities[0].buildings.push(BuildingKind::Well);
             add_active_route(&mut s, CityId(0), CityId(1));
