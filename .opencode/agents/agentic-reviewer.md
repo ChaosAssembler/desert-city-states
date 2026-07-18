@@ -15,6 +15,7 @@ permission:
     "opencode.json": allow
   skill:
     agent-design: allow
+    customize-opencode: allow
     skill-design: allow
     agentic-system-conventions: allow
     review-reporting: allow
@@ -32,6 +33,8 @@ Load the `agent-design` skill for agent file format and design principles.
 Load the `skill-design` skill for skill file format and design principles.
 
 Load the `agentic-system-conventions` skill for system taxonomy, architecture, and design conventions.
+
+Load the `customize-opencode` skill for accurate OpenCode configuration schemas.
 
 ## Constraints
 
