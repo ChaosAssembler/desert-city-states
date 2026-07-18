@@ -10,7 +10,6 @@ permission:
   skill:
     game-tester: allow
     subagent-autonomy: allow
-  pty: allow
 ---
 
 # Game Tester
