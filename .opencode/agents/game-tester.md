@@ -6,7 +6,7 @@ permission:
   glob: allow
   grep: allow
   bash:
-    "cargo run *dcs-app*": allow
+    "cargo run dcs-app -- * --serve *": allow
   skill:
     game-tester: allow
     subagent-autonomy: allow
