@@ -24,15 +24,14 @@
 //! `step` / `resolve_one` are pure functions of `(state, command-stream)`:
 //! identical seed + identical commands ⇒ identical resulting state + events.
 
-use crate::hex::{astar, in_map, neighbors};
-use crate::model::{FOUND_CITY_INFLUENCE, tile_at, unit_def};
-use crate::{
-    CityId, Command, GameEvent, GameState, PlayerId, RejectReason, TileId, UnitId, UnitKind,
+use crate::hex::{astar, in_map};
+use crate::model::{
+    FOUND_CITY_INFLUENCE, POP_FOR_SPECIALIZE, SPECIALIZE_COST_INFLUENCE, UNIT_TRAIN_COST, unit_def,
 };
-
-/// Wealth cost to train a unit in Phase 1. (Phase 2 will replace this with a
-/// per-kind cap/balance formula; this is a flat placeholder per the spec.)
-const TRAIN_COST: u32 = 10;
+use crate::{
+    BuildingKind, CityId, CitySpecialization, Command, GameEvent, GameState, PlayerId,
+    RejectReason, TileId, UnitId, UnitKind,
+};
 
 /// Return the player whose turn it currently is.
 #[inline]
@@ -71,6 +70,12 @@ pub fn step(state: &mut GameState, commands: &[Command]) -> Vec<GameEvent> {
     // detect it up front and skip resolution entirely.
     let ended_turn = commands.iter().any(|c| matches!(c, Command::EndTurn));
     if ended_turn {
+        // Run Income phase for the current actor before advancing.
+        state.phase = crate::TurnPhase::Income;
+        let actor = current_player(state);
+        let income_events = crate::economy::apply_income(state, actor);
+        events.extend(income_events);
+
         advance_actor(state, &mut events);
         state.phase = crate::TurnPhase::EndOfTurn;
         return events;
@@ -91,10 +96,11 @@ pub fn step(state: &mut GameState, commands: &[Command]) -> Vec<GameEvent> {
         }
     }
 
-    // Income phase — STUBBED for Phase 2.
+    // Income phase — per-actor economy update (economy spec §6.1).
     state.phase = crate::TurnPhase::Income;
-    // (No per-actor economy in Phase 1 — intentionally left as a no-op stub so
-    // replay stays deterministic and `advance_turn` does not double-apply it.)
+    let actor = current_player(state);
+    let income_events = crate::economy::apply_income(state, actor);
+    events.extend(income_events);
 
     state.phase = crate::TurnPhase::EndOfTurn;
     events
@@ -196,6 +202,13 @@ pub fn advance_turn(state: &mut GameState) -> Vec<GameEvent> {
         u.moves_left = unit_def(u.kind).moves;
     }
 
+    // --- Refresh fog from all owned cities (Watchtower/Scholar re-reveal) ---
+    crate::fog::refresh_city_fog(state);
+
+    // --- Recompute route statuses (caravan spec §6.5) ---
+    let route_events = crate::caravan::recompute_routes(state);
+    events.extend(route_events);
+
     // --- Reset phase / actor ---
     state.phase = crate::TurnPhase::Order;
     state.current_actor = PlayerId(0);
@@ -269,15 +282,28 @@ pub fn validate(state: &GameState, cmd: &Command) -> Result<(), RejectReason> {
             if c.owner != actor {
                 return Err(RejectReason::NotYourTurn);
             }
+            // Raider must be in Fortress.
+            if *kind == UnitKind::Raider && c.specialization != Some(CitySpecialization::Fortress) {
+                return Err(RejectReason::InvalidState);
+            }
+            let mut cost = UNIT_TRAIN_COST[crate::world::unit_kind_index(kind)];
+            if c.specialization == Some(CitySpecialization::Fortress) {
+                cost = (cost as f32 * crate::model::FORTRESS_TRAIN_DISCOUNT) as u32;
+            }
             let player = &state.players[actor.0 as usize];
-            if player.resources.wealth < TRAIN_COST {
+            if player.resources.wealth < cost {
                 return Err(RejectReason::NoResource);
             }
-            let _ = kind;
+            // Unit cap check.
+            let cap = crate::world::unit_cap(state, actor);
+            let current = state.units.iter().filter(|u| u.owner == actor).count() as u32;
+            if current >= cap {
+                return Err(RejectReason::Blocked);
+            }
             Ok(())
         }
 
-        Command::Build { city, .. } => {
+        Command::Build { city, building } => {
             let c = state
                 .cities
                 .get(city.0 as usize)
@@ -285,7 +311,23 @@ pub fn validate(state: &GameState, cmd: &Command) -> Result<(), RejectReason> {
             if c.owner != actor {
                 return Err(RejectReason::NotYourTurn);
             }
-            // Phase 2 effect stubbed; ownership validated here.
+            if c.buildings.len() >= crate::world::building_slots(c) as usize {
+                return Err(RejectReason::Blocked);
+            }
+            if c.buildings.contains(building) {
+                return Err(RejectReason::InvalidState);
+            }
+            let base_cost = crate::model::BUILD_COST[crate::world::building_index(building)];
+            let cost = if *building == BuildingKind::Market
+                && c.specialization == Some(CitySpecialization::TradeHub)
+            {
+                base_cost.saturating_sub(crate::model::TRADE_HUB_MARKET_DISCOUNT)
+            } else {
+                base_cost
+            };
+            if state.players[actor.0 as usize].resources.wealth < cost {
+                return Err(RejectReason::NoResource);
+            }
             Ok(())
         }
 
@@ -296,6 +338,15 @@ pub fn validate(state: &GameState, cmd: &Command) -> Result<(), RejectReason> {
                 .ok_or(RejectReason::InvalidState)?;
             if c.owner != actor {
                 return Err(RejectReason::NotYourTurn);
+            }
+            if c.population < POP_FOR_SPECIALIZE {
+                return Err(RejectReason::InvalidState);
+            }
+            if c.specialization.is_some() {
+                return Err(RejectReason::InvalidState);
+            }
+            if state.players[actor.0 as usize].resources.influence < SPECIALIZE_COST_INFLUENCE {
+                return Err(RejectReason::NoResource);
             }
             Ok(())
         }
@@ -381,24 +432,15 @@ fn resolve_one(state: &mut GameState, cmd: Command) -> Vec<GameEvent> {
         Command::TrainUnit { city, kind } => resolve_train(state, city, kind, actor),
 
         Command::Build { city, building } => {
-            // Phase 2 effect stubbed. Accept and emit Built-like no-op + Warn.
-            let _ = (city, building);
-            vec![GameEvent::Warn {
-                message: "Build effect stubbed in Phase 1".into(),
-            }]
+            crate::world::resolve_build(state, city, building, actor)
         }
 
         Command::Specialize { city, spec } => {
-            // Emit the success-ish event cheaply; deep effect stubbed.
-            vec![GameEvent::Specialized { city, spec }]
+            crate::world::resolve_specialize(state, city, spec, actor)
         }
 
         Command::ConnectRoute { from, to } => {
-            // Phase 2 effect stubbed; emit Warn (path computation is Phase 2).
-            let _ = (from, to);
-            vec![GameEvent::Warn {
-                message: "ConnectRoute effect stubbed in Phase 1".into(),
-            }]
+            crate::caravan::resolve_connect(state, from, to, actor)
         }
 
         Command::Patrol { unit, tile } => {
@@ -417,18 +459,10 @@ fn resolve_one(state: &mut GameState, cmd: Command) -> Vec<GameEvent> {
         }
 
         Command::RaidRoute { unit, route } => {
-            let _ = (unit, route);
-            vec![GameEvent::Warn {
-                message: "RaidRoute effect stubbed in Phase 1".into(),
-            }]
+            crate::combat::resolve_raid_contest(state, unit, route)
         }
 
-        Command::RaidCity { unit, city } => {
-            let _ = (unit, city);
-            vec![GameEvent::Warn {
-                message: "RaidCity effect stubbed in Phase 1".into(),
-            }]
-        }
+        Command::RaidCity { unit, city } => crate::combat::resolve_city_raid(state, unit, city),
     };
 
     state.log.append(&mut events.clone());
@@ -436,6 +470,7 @@ fn resolve_one(state: &mut GameState, cmd: Command) -> Vec<GameEvent> {
 }
 
 /// Fully resolved in Phase 1: move if a path exists and moves remain.
+/// Triggers combat if an enemy unit occupies the destination tile.
 fn resolve_move(
     state: &mut GameState,
     unit: UnitId,
@@ -483,32 +518,27 @@ fn resolve_move(
         u.tile = to;
     }
 
-    // Reveal fog: destination + neighbors for the acting player.
-    let mut revealed = vec![to];
-    for n in neighbors(to_coord) {
-        if let Some(t) = tile_at(state, n) {
-            revealed.push(t.id);
-        }
-    }
-    let player = &mut state.players[actor.0 as usize];
-    let mut newly: Vec<TileId> = Vec::new();
-    for tid in revealed {
-        if player.discovered.insert(tid) {
-            newly.push(tid);
-        }
-    }
-    if !newly.is_empty() {
-        state.log.push(GameEvent::Revealed {
-            player: actor,
-            tiles: newly.clone(),
-        });
-    }
+    // Reveal fog from the unit's stop position.
+    crate::fog::reveal_from_unit(state, unit);
 
-    vec![GameEvent::UnitMoved {
+    let mut events = vec![GameEvent::UnitMoved {
         unit,
         from: from_tile,
         to,
-    }]
+    }];
+
+    // Check for enemy unit at destination — trigger combat (spec §6.1).
+    if let Some(enemy_id) = state
+        .units
+        .iter()
+        .find(|u| u.tile == to && u.owner != actor)
+        .map(|u| u.id)
+    {
+        let combat_events = crate::combat::resolve_combat(state, unit, enemy_id, from_tile);
+        events.extend(combat_events);
+    }
+
+    events
 }
 
 /// Fully resolved in Phase 1: found a city, consume the Scout, spend Influence.
@@ -537,8 +567,13 @@ fn resolve_found_city(
         stockpiles: crate::Stockpiles::default(),
         route_slots: 2,
         growth_timer: 0,
+        queue: vec![],
     };
     state.cities.push(city);
+
+    // Reveal fog around the new city.
+    let city_sight_radius = crate::fog::city_sight(state, city_id);
+    crate::fog::reveal(state, actor, tile, city_sight_radius);
 
     // Spend influence.
     state.players[actor.0 as usize].resources.influence -= FOUND_CITY_INFLUENCE;
@@ -559,6 +594,7 @@ fn resolve_found_city(
 }
 
 /// Fully resolved in Phase 1: deduct Wealth, spawn a unit on the city tile.
+/// Raider requires Fortress specialization; Fortress grants a training discount.
 fn resolve_train(
     state: &mut GameState,
     city: CityId,
@@ -572,12 +608,48 @@ fn resolve_train(
         }];
     }
 
-    state.players[actor.0 as usize].resources.wealth -= TRAIN_COST;
+    let city_data = &state.cities[city.0 as usize];
 
+    // Raider must be in Fortress.
+    if kind == UnitKind::Raider && city_data.specialization != Some(CitySpecialization::Fortress) {
+        return vec![GameEvent::Rejected {
+            command: Command::TrainUnit { city, kind },
+            reason: RejectReason::InvalidState,
+        }];
+    }
+
+    // Check unit cap.
+    let cap = crate::world::unit_cap(state, actor);
+    let current = state.units.iter().filter(|u| u.owner == actor).count() as u32;
+    if current >= cap {
+        return vec![GameEvent::Rejected {
+            command: Command::TrainUnit { city, kind },
+            reason: RejectReason::Blocked,
+        }];
+    }
+
+    // Calculate cost (Fortress discount).
+    let mut cost = UNIT_TRAIN_COST[crate::world::unit_kind_index(&kind)];
+    if city_data.specialization == Some(CitySpecialization::Fortress) {
+        cost = (cost as f32 * crate::model::FORTRESS_TRAIN_DISCOUNT) as u32;
+    }
+
+    // Validate: enough wealth.
+    if state.players[actor.0 as usize].resources.wealth < cost {
+        return vec![GameEvent::Rejected {
+            command: Command::TrainUnit { city, kind },
+            reason: RejectReason::NoResource,
+        }];
+    }
+
+    // Spend wealth.
+    state.players[actor.0 as usize].resources.wealth -= cost;
+
+    // Spawn unit.
     let tile = state.cities[city.0 as usize].tile;
     let unit_id = state.alloc_unit_id();
     let def = unit_def(kind);
-    let unit = crate::Unit {
+    state.units.push(crate::Unit {
         id: unit_id,
         owner: actor,
         kind,
@@ -585,8 +657,10 @@ fn resolve_train(
         hp: def.hp as u32,
         moves_left: def.moves,
         ability: crate::UnitAbility::None,
-    };
-    state.units.push(unit);
+    });
+
+    // Reveal fog from the newly trained unit.
+    crate::fog::reveal_from_unit(state, unit_id);
 
     vec![GameEvent::UnitTrained {
         unit: unit_id,
@@ -655,6 +729,7 @@ fn highest_score_player(state: &GameState) -> PlayerId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hex::neighbors;
     use crate::model::{GameState, Tile};
     use crate::scenario::mvp_preset;
     use crate::{Command, GameEvent, PlayerId, RejectReason, TileId, UnitId, UnitKind};
@@ -933,6 +1008,59 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, GameEvent::Rejected { .. })),
             "expected Rejected, no panic"
+        );
+    }
+
+    /// Integration test: spin up a full world-gen game (radius 4, 3 players,
+    /// 30 turns) and run every player through `EndTurn` until the game ends
+    /// naturally — either via a Victory event or reaching the turn limit.
+    #[test]
+    fn headless_game_reaches_natural_end() {
+        let cfg = mvp_preset();
+        let mut state = crate::map::new_game(&cfg, 42);
+
+        assert!(
+            !state.players.is_empty(),
+            "world-gen should produce at least one player"
+        );
+
+        let mut victory_found = false;
+
+        // Run until natural end. Each call to `step` acts as current_actor
+        // and advances the actor pointer, so a flat loop suffices.
+        for _ in 0..cfg.turn_limit + 5 {
+            let events = step(&mut state, &[Command::EndTurn]);
+
+            for event in &events {
+                if let GameEvent::Victory { .. } = event {
+                    victory_found = true;
+                    break;
+                }
+            }
+
+            if victory_found {
+                break;
+            }
+
+            // If only one (or zero) players remain, game is over by elimination.
+            if state.players.iter().filter(|p| !p.defeated).count() <= 1 {
+                break;
+            }
+        }
+
+        // Game should have ended naturally.
+        let game_over = victory_found
+            || state.turn >= cfg.turn_limit
+            || state.players.iter().filter(|p| !p.defeated).count() <= 1;
+        assert!(
+            game_over,
+            "Game should reach a natural end (victory, turn limit, or elimination)"
+        );
+
+        // State should be valid: turn progressed at least once.
+        assert!(
+            state.turn >= 1,
+            "Turn counter should be at least 1 after game starts"
         );
     }
 }

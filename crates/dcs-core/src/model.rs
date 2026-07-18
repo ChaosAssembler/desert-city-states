@@ -195,6 +195,17 @@ pub struct Tile {
     pub improvement: Option<BuildingKind>,
 }
 
+/// An order queued in a city's production queue.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum QueuedOrder {
+    /// Build a building in the city.
+    Build(BuildingKind),
+    /// Train a unit in the city.
+    Train(UnitKind),
+    /// Specialize the city.
+    Specialize(CitySpecialization),
+}
+
 /// A founded city.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct City {
@@ -216,6 +227,8 @@ pub struct City {
     pub route_slots: u8,
     /// Turns until the next growth tick.
     pub growth_timer: u32,
+    /// Production queue of pending orders.
+    pub queue: Vec<QueuedOrder>,
 }
 
 /// A mobile unit.
@@ -580,7 +593,7 @@ pub const UNITS: &[UnitDef; 3] = &[
         def: 1,
         hp: 3,
         upkeep: 1,
-        sight: 2,
+        sight: 3, // updated to match fog-of-war spec (was 2)
     }, // Scout
     UnitDef {
         moves: 2,
@@ -622,6 +635,51 @@ pub fn starting_influence() -> u32 {
 pub fn starting_wealth() -> u32 {
     10
 }
+
+// ---------------------------------------------------------------------------
+// Phase 2 balance tables
+// ---------------------------------------------------------------------------
+
+/// Building build costs indexed by [`BuildingKind`] discriminant order:
+/// Well, Market, Granary, Watchtower, Caravanserai, Temple.
+pub const BUILD_COST: [u32; 6] = [8, 10, 6, 12, 10, 12];
+
+/// Unit training costs indexed by [`UnitKind`] discriminant order:
+/// Scout, CaravanGuard, Raider.
+pub const UNIT_TRAIN_COST: [u32; 3] = [4, 6, 5];
+
+/// Influence cost to specialize a city.
+pub const SPECIALIZE_COST_INFLUENCE: u32 = 10;
+
+/// Minimum population required to specialize a city.
+pub const POP_FOR_SPECIALIZE: u32 = 3;
+
+/// Fortress specialization multiplies training cost by this factor.
+pub const FORTRESS_TRAIN_DISCOUNT: f32 = 0.75;
+
+/// Trade Hub specialization reduces Market build cost by this amount.
+pub const TRADE_HUB_MARKET_DISCOUNT: u32 = 4;
+
+/// Minimum water yield above this threshold for city growth to progress.
+pub const GROWTH_WATER_THRESHOLD: u32 = 5;
+
+/// Number of consecutive growth-eligible turns before a population increment.
+pub const GROWTH_PERIOD_TURNS: u32 = 3;
+
+/// Base unit cap (added to total population across all cities).
+pub const UNIT_CAP_BASE: u32 = 2;
+
+/// Base water stockpile cap.
+pub const WATER_CAP_BASE: u32 = 30;
+
+/// Base wealth stockpile cap.
+pub const WEALTH_CAP_BASE: u32 = 50;
+
+/// Base influence stockpile cap.
+pub const INFLUENCE_CAP_BASE: u32 = 30;
+
+/// Water cap bonus per Granary building.
+pub const GRANARY_WATER_BONUS: u32 = 5;
 
 // ---------------------------------------------------------------------------
 // serde helpers for fxhash collections

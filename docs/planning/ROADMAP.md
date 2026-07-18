@@ -1,6 +1,6 @@
 # Desert City States — Implementation Roadmap
 
-> **Status:** Planning doc 4 of 4 — phased implementation plan. Implementation status: Phase 0 complete, Phase 1 next.
+> **Status:** Planning doc 4 of 4 — phased implementation plan. Implementation status: Phase 0 complete, Phase 1 complete, Phase 2 complete, Phase 3 next.
 > **Source of truth for behavior:** `docs/design/Desert-City-States.md` (DD)
 > **Architecture:** `docs/architecture/ARCHITECTURE.md` + `docs/architecture/decisions/` (ADR-0001…0008)
 > **Specs (binding):** `docs/specs/README.md` and the 15 spec files
@@ -132,14 +132,14 @@ from a seed, step turns headlessly, and round-trip state. Heavy unit testing.
 
 ### Key deliverables (spec → module)
 
-- [ ] `docs/specs/foundation-hex-grid-math.md` **present** (gap closed) → `dcs-core::hex`
-- [ ] `docs/specs/foundation-core-data-model.md` → `dcs-core::model`
-- [ ] `docs/specs/foundation-scenario-config.md` → `dcs-core::scenario`
-- [ ] `docs/specs/foundation-world-generation.md` → `dcs-core::map`
-- [ ] `docs/specs/foundation-turn-engine.md` → `dcs-core::turn`
-- [ ] `docs/specs/foundation-save-load.md` → `dcs-core::serialize`
-- [ ] `docs/specs/README.md` has no missing-spec gap note
-- [ ] `dcs-protocol` crate → `Command`/`GameEvent`/`VersionedSave` (ADR-0004/0007)
+- [x] `docs/specs/foundation-hex-grid-math.md` **present** (gap closed) → `dcs-core::hex`
+- [x] `docs/specs/foundation-core-data-model.md` → `dcs-core::model`
+- [x] `docs/specs/foundation-scenario-config.md` → `dcs-core::scenario`
+- [x] `docs/specs/foundation-world-generation.md` → `dcs-core::map`
+- [x] `docs/specs/foundation-turn-engine.md` → `dcs-core::turn`
+- [x] `docs/specs/foundation-save-load.md` → `dcs-core::serialize`
+- [x] `docs/specs/README.md` has no missing-spec gap note
+- [x] `dcs-protocol` crate → `Command`/`GameEvent`/`VersionedSave` (ADR-0004/0007)
 
 ### Dependencies
 
@@ -157,22 +157,24 @@ from a seed, step turns headlessly, and round-trip state. Heavy unit testing.
 
 ### Exit / Definition of Done
 
-- [ ] `new_game(scenario, seed)` is deterministic: `==` deep-equal for equal
+- [x] `new_game(scenario, seed)` is deterministic: `==` deep-equal for equal
   inputs; different seed → different valid map (world-gen spec §8).
-- [ ] `step(state, [EndTurn])` cycles actors and `advance_turn` increments
+- [x] `step(state, [EndTurn])` cycles actors and `advance_turn` increments
   `turn`, resets `moves_left`, runs victory hook (turn-engine spec §8).
-- [ ] Illegal command → `GameEvent::Rejected`, no panic, no partial state change.
-- [ ] `GameState` round-trips via **both** json and postcard; byte-stable
+- [x] Illegal command → `GameEvent::Rejected`, no panic, no partial state change.
+- [x] `GameState` round-trips via **both** json and postcard; byte-stable
   `tile_index`/`VictoryTracker` (FxHashMap order) (core-data-model §8, save-load §9).
-- [ ] **Save == replay:** re-issuing a saved `Command` log against `new_game`
+- [x] **Save == replay:** re-issuing a saved `Command` log against `new_game`
   reproduces the end state (turn-engine §8, save-load §7).
-- [ ] `mvp_preset()` passes `validate()` and yields `map_radius==4,
+- [x] `mvp_preset()` passes `validate()` and yields `map_radius==4,
   player_count==3` (scenario-config spec §8).
-- [ ] `cargo test -p dcs-core` green; CI `cargo tree` gate still green.
+- [x] `cargo test -p dcs-core` green; CI `cargo tree` gate still green.
 
 ---
 
 ## Phase 2 — Gameplay systems (dcs-core)
+
+- [x] **Done**
 
 ### Goal
 
@@ -205,12 +207,12 @@ units/movement, combat, fog of war, and the signature caravan/route system.
 
 ### Key deliverables (spec → module), in dependency order
 
-- [ ] `docs/specs/gameplay-fog-of-war.md` → `dcs-core::fog` (needed by units reveal + caravan fog rule)
-- [ ] `docs/specs/gameplay-cities.md` → `dcs-core::world` (FoundCity/Build/Specialize/Train) — **sets DD #4 default**
-- [ ] `docs/specs/gameplay-units-movement.md` → `dcs-core::world` (A*, MoveUnit, Patrol, Raid*)
-- [ ] `docs/specs/gameplay-combat.md` → `dcs-core::combat` (formula, siege, raid contest)
-- [ ] `docs/specs/gameplay-caravan-routes.md` → `dcs-core::caravan` (`safe_route`, yields, state machine)
-- [ ] `docs/specs/gameplay-resources-economy.md` → `dcs-core::economy` (income/upkeep/isolation/starvation)
+- [x] `docs/specs/gameplay-fog-of-war.md` → `dcs-core::fog` (needed by units reveal + caravan fog rule)
+- [x] `docs/specs/gameplay-cities.md` → `dcs-core::world` (FoundCity/Build/Specialize/Train) — **sets DD #4 default**
+- [x] `docs/specs/gameplay-units-movement.md` → `dcs-core::world` (A*, MoveUnit, Patrol, Raid*)
+- [x] `docs/specs/gameplay-combat.md` → `dcs-core::combat` (formula, siege, raid contest)
+- [x] `docs/specs/gameplay-caravan-routes.md` → `dcs-core::caravan` (`safe_route`, yields, state machine)
+- [x] `docs/specs/gameplay-resources-economy.md` → `dcs-core::economy` (income/upkeep/isolation/starvation)
 
 ### Dependencies
 
@@ -229,26 +231,28 @@ units/movement, combat, fog of war, and the signature caravan/route system.
 
 ### Exit / Definition of Done
 
-- [ ] A scripted headless game (scripted `Command` sequences) reaches a natural
+- [x] A scripted headless game (scripted `Command` sequences) reaches a natural
   end state with economy, cities, units, combat, and caravan network all active.
-- [ ] Isolation penalty: city with zero active routes loses exactly 2 Water/turn;
+- [x] Isolation penalty: city with zero active routes loses exactly 2 Water/turn;
   a city with an active alternate despite a Severed route is **not** isolated
   (economy §8, caravan §8).
-- [ ] `safe_route` returns inclusive, deterministic, enemy-avoiding path;
+- [x] `safe_route` returns inclusive, deterministic, enemy-avoiding path;
   `preview_cost == 5 + path.len()` (caravan §8).
-- [ ] Raid cascade: no-defender → Threatened (1st) → Severed (2nd consecutive);
+- [x] Raid cascade: no-defender → Threatened (1st) → Severed (2nd consecutive);
   controlled by a patrolling Guard → contest (combat §8, caravan §8).
-- [ ] Combat: only on/adjacent units fight; each roll −1 HP; Ridge/Salt-Flats
+- [x] Combat: only on/adjacent units fight; each roll −1 HP; Ridge/Salt-Flats
   mods shift odds (combat §8).
-- [ ] Fog: Scout reveals r3; enemy units hidden in fog (incl. from AI); static
+- [x] Fog: Scout reveals r3; enemy units hidden in fog (incl. from AI); static
    cities/routes remembered but shown stale unless currently observed
    (memory-marker model); units leave no memory once out of sight (fog §8).
-- [ ] `cargo test -p dcs-core` green (per-spec acceptance checklists); CI
+- [x] `cargo test -p dcs-core` green (per-spec acceptance checklists); CI
   `cargo tree` gate still green.
 
 ---
 
 ## Phase 3 — Behavior (dcs-core)
+
+- [~] **In Progress**
 
 ### Goal
 

@@ -17,12 +17,17 @@
 
 #![forbid(unsafe_code)]
 
+pub mod caravan;
+pub mod combat;
+pub mod economy;
+pub mod fog;
 pub mod hex;
 pub mod map;
 pub mod model;
 pub mod scenario;
 pub mod serialize;
 pub mod turn;
+pub mod world;
 
 // Re-export the shared contract types from dcs-protocol so the whole crate
 // and downstream crates use ONE canonical definition. These types are owned by
@@ -37,6 +42,6 @@ pub use dcs_protocol::{
 pub use scenario::{AiPersonality, Difficulty, ScenarioConfig, ScenarioError};
 
 pub use model::{
-    CaravanRoute, City, GameState, Player, PlayerColor, PlayerKind, Relic, ResourceKind,
-    Stockpiles, TerrainType, Tile, TurnPhase, Unit, UnitAbility, VictoryTracker,
+    CaravanRoute, City, GameState, Player, PlayerColor, PlayerKind, QueuedOrder, Relic,
+    ResourceKind, Stockpiles, TerrainType, Tile, TurnPhase, Unit, UnitAbility, VictoryTracker,
 };

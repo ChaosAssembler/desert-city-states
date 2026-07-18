@@ -245,7 +245,11 @@ pub enum GameEvent {
         path: Vec<TileId>,
     },
     /// A route's status changed.
-    RouteStatusChanged { route: RouteId, status: RouteStatus },
+    RouteStatusChanged {
+        route: RouteId,
+        old_status: RouteStatus,
+        status: RouteStatus,
+    },
     /// A unit began patrolling a tile.
     UnitPatrolled { unit: UnitId, tile: TileId },
     /// A unit was garrisoned in a city.
