@@ -273,9 +273,7 @@ mod tests {
         GameState, Player, PlayerKind, Stockpiles, TerrainType, Tile, WATER_CAP_BASE,
     };
     use crate::scenario::mvp_preset;
-    use crate::{
-        CaravanRoute, PlayerColor, PlayerId, RouteId, RouteStatus, UnitId, UnitKind,
-    };
+    use crate::{CaravanRoute, PlayerColor, PlayerId, RouteId, RouteStatus, UnitId, UnitKind};
 
     /// Build a minimal deterministic `GameState` for economy tests.
     ///

@@ -86,7 +86,7 @@ pub struct Situation {
     pub own_units:     Vec<UnitId>,
     pub own_routes:    Vec<RouteId>,
     pub own_oases:     u32,
-    pub total_oases:   u32,                 // from map generation (always known: it's terrain)
+    pub total_oases:   u32,                 // computed as tiles.iter().filter(|t| t.terrain == Oasis).count() — a scan of the map, not a stored field
     pub fog_frontier:  Vec<TileId>,         // nearest unexplored tiles to expand toward
     pub visible_enemy_units:   Vec<UnitId>, // is_unit_visible(player, u) only
     pub visible_enemy_cities:  Vec<CityId>, // is_city_visible(player, c) only
@@ -113,6 +113,12 @@ Normal = command_budget 7,  lookahead 1, (weights as-is),        preemptive_raid
 Hard   = command_budget 10, lookahead 2, security*1.2, raid*1.2,  preemptive_raid=true,  defend_core_routes=true
 ```
 
+> **`morale` note:** morale is currently globally fixed at `1.0` (DD §11.3) — no
+> morale-based modifiers exist yet. The value in the Easy tier above is a
+> forward-compatibility placeholder for future tuning (e.g. Easy morale < 1.0 to
+> weaken unit effectiveness, or Hard morale > 1.0 to boost it). The field is present
+> in the table so difficulty tiers can be data-driven when morale mechanics land.
+
 > **Difficulty tiers are POST-MVP.** Easy = "defend a bit, less reliably" — it performs
 > occasional, unreliable route defense (resolves OQ-7), not a flat under-defend.
 > Normal/Hard = reliable defense (`defend_core_routes` always covers threatened routes)
@@ -131,6 +137,12 @@ pub fn ai_plan(state: &GameState, player: PlayerId, difficulty: Difficulty) -> V
 /// Build the fog-aware Situation (§4). Uses fog queries from fog spec.
 fn assess(state: &GameState, player: PlayerId) -> Situation;
 
+/// Look up the AI personality for this player (reads `player.kind`).
+fn personality_of(state: &GameState, player: PlayerId) -> AiPersonality;
+
+/// Map (personality, difficulty) → `AiParams` via the weight tables in §4.
+fn params_for(personality: AiPersonality, difficulty: Difficulty) -> AiParams;
+
 /// Score candidate actions by weighted utility; returns them sorted desc.
 fn prioritize(state: &GameState, player: PlayerId, sit: &Situation, p: &AiParams)
     -> Vec<ScoredAction>;
@@ -147,12 +159,33 @@ fn candidates_raid(state, player, sit, p) -> Vec<ScoredAction>;   // RaidRoute /
 fn candidates_scout(state, player, sit)   -> Vec<ScoredAction>;   // MoveUnit toward fog
 ```
 
-`ScoredAction` is an internal `(f32 score, Command cmd, u8 category)` tuple used only
-to rank and budget; it is never stored.
+> **Note on `candidates_raid`:** this is the only generator that takes `&AiParams` (the
+> `p` parameter). It needs access to `preemptive_raid` (a threshold flag that determines
+> whether to target the enemy's weakest-link route — see §6.6). The other generators
+> derive all needed information from `GameState` + `Situation` alone.
+
+> **`prioritize` calls all `candidates_*` functions internally**, applies per-category
+> weights, and sorts the combined results. The caller of `prioritize` (i.e. `ai_plan`)
+> never invokes candidate generators directly — they are implementation details of the
+> scoring pipeline.
+
+`ScoredAction` is a named struct used only to rank and budget; it is never stored:
+
+```rust
+struct ScoredAction {
+    score:    f32,     // weighted utility (higher = emit first)
+    cmd:      Command, // the command to emit if selected
+    category: u8,      // weight-table column index (expand=0, build=1, …)
+}
+```
 
 ## 6. Algorithms
 
-### 6.1 Pipeline: assess → prioritize → emit
+### 6.1 Pipeline: assess → prioritize → emit <!-- MVP ✓ -->
+
+> **MVP ✓** — the three-stage pipeline is the core structure. The MVP primitive
+> profile (§10) uses a simplified variant with fewer candidate generators and no
+> personality/difficulty tuning, but the pipeline shape is required.
 
 ```rust
 fn ai_plan(state, player, difficulty) -> Vec<Command> {
@@ -169,8 +202,10 @@ fn ai_plan(state, player, difficulty) -> Vec<Command> {
   undiscovered tile (expand targets). Flags own routes whose `path` has an
   uncontrolled tile via `is_route_tile_controlled` (caravan spec §6.6) and those
   whose `status` is `Threatened`/`Severed`.
-- **prioritize:** for each candidate generator, compute a `score = base_utility *
-  weight[category] * situation_modifier`. Example modifiers: a `ConnectRoute` between
+- **prioritize:** calls **all** `candidates_*` functions internally (§5), applies
+  per-category weights from `AiParams`, multiplies by `situation_modifier`, and sorts
+  descending into `Vec<ScoredAction>`. The caller does not invoke candidate generators
+  directly — they are implementation details of `prioritize`. Example modifiers: a `ConnectRoute` between
   two *unconnected* own cities gets a bonus proportional to the resulting network
   synergy (`network_synergy`, caravan spec §6.4); a `Patrol` on an `exposed_own_route`
   gets a bonus scaled by `route_security`; a `RaidRoute` on a *visible enemy* route
@@ -180,7 +215,9 @@ fn ai_plan(state, player, difficulty) -> Vec<Command> {
   the per-turn `command_budget` is not exceeded; stop when budget is spent or the list
   is exhausted. No `EndTurn` is emitted here.
 
-### 6.2 Expansion (found)
+### 6.2 Expansion (found) <!-- MVP ✓ -->
+
+> **MVP ✓** — founding cities on oases is a core MVP requirement (§10).
 
 - Choose an unowned **Oasis** in/near `fog_frontier` reachable by a Scout (or found
   directly if a Scout is already on/adjacent to an oasis). Prefer oases that are
@@ -190,7 +227,10 @@ fn ai_plan(state, player, difficulty) -> Vec<Command> {
   if `player.resources.influence >= FOUND_CITY_INFLUENCE (10)`.
 - Expansionist/Hard expand more (higher weight + budget); Fortifier/Raider expand less.
 
-### 6.3 City build-up & specialization
+### 6.3 City build-up & specialization <!-- POST-MVP -->
+
+> **POST-MVP** — the MVP primitive profile (§10) does not specialize cities; the full
+> role-assignment and specialization pipeline is an eventual behavior.
 
 - For each own city with `building_slots` free and affordable Wealth, emit `Build`
   for the building that best fits the city's intended role:
@@ -204,7 +244,11 @@ fn ai_plan(state, player, difficulty) -> Vec<Command> {
   second Trade Hub (economy), and one Fortress if any enemy is visible; Trader
   personalities over-index on Trade Hub, Fortifier on Fortress, etc.
 
-### 6.4 Route network planning & defense (SIGNATURE — mandatory route awareness)
+### 6.4 Route network planning & defense (SIGNATURE — mandatory route awareness) <!-- MVP ✓ (connect + defend); POST-MVP (redundancy + react) -->
+
+> **MVP ✓** (items 1–2) — connecting cities and basic route defense are core MVP
+> requirements (§10). **POST-MVP** (items 3–4) — redundancy planning and reactive
+> re-patrol/re-connect are eventual behaviors.
 
 This is the make-or-break area (DD §18 OQ-7). The AI treats routes as primary:
 
@@ -227,7 +271,10 @@ This is the make-or-break area (DD §18 OQ-7). The AI treats routes as primary:
 4. **React:** if a route became `Severed` last turn, prioritize re-patrol or a new
    `ConnectRoute` before any expansion this turn (threat-response, DD §11.2).
 
-### 6.5 Training & scouting
+### 6.5 Training & scouting <!-- MVP ✓ -->
+
+> **MVP ✓** — scouting and basic unit training are required for the MVP to found
+> cities and defend routes (§10).
 
 - Train units within the empire cap (`2 + total Pop`, units spec §6.4) when Wealth
   allows: keep at least one Caravan Guard per exposed route (route-security), one
@@ -236,7 +283,10 @@ This is the make-or-break area (DD §18 OQ-7). The AI treats routes as primary:
 - Scout moves: emit `MoveUnit { unit: scout, to: fog_frontier tile }` to reveal; the
   stop-tile radius reveal (fog spec §6.2) makes Scouts the discovery engine.
 
-### 6.6 Raiding & threat response
+### 6.6 Raiding & threat response <!-- POST-MVP -->
+
+> **POST-MVP** — raiding and preemptive strikes are part of the full rational pipeline,
+> not the MVP primitive profile (§10).
 
 - If a *visible enemy* route has an exposed tile (and the AI has a Raider adjacent or
   can move one there within `moves_left`), emit `RaidRoute` (gated by `raid_weight`).
@@ -248,7 +298,9 @@ This is the make-or-break area (DD §18 OQ-7). The AI treats routes as primary:
 - If the AI itself is threatened (enemy unit adjacent to an own city or route), raise
   `defend_cities`/`route_security` priority this turn (garrison a Guard, or reroute).
 
-### 6.7 Determinism & RNG (ADR-0006)
+### 6.7 Determinism & RNG (ADR-0006) <!-- MVP ✓ -->
+
+> **MVP ✓** — determinism is a fundamental invariant (§3) required from the start.
 
 - The utility sort is deterministic; ties are broken by a stable `Command`/`entity ID`
   order so the same `state` yields the same plan **without** drawing RNG.
@@ -297,6 +349,10 @@ This is the make-or-break area (DD §18 OQ-7). The AI treats routes as primary:
 - Architecture: ARCH §9 (AI architecture — pure `ai_plan`, utility-based, route awareness mandatory, difficulty tiers), §5.5 (AI → Command), §2.4 (crate API).
 - ADRs: ADR-0003 (pure core — AI is core, deterministic), ADR-0004 (Command-only; same enum as human ⇒ no cheat), ADR-0006 (RNG lives in state; AI draws only `state.rng`).
 - Related specs: `gameplay-fog-of-war.md` (visibility queries the AI must use), `gameplay-caravan-routes.md` (`safe_route`, `is_route_tile_controlled`, `network_synergy`, `connected_city_count`, route state), `gameplay-cities.md` (`FoundCity`, `Specialize`, `building_slots`), `gameplay-units-movement.md` (training cap, `Patrol`/`RaidRoute`/`RaidCity`), `gameplay-resources-economy.md` (`is_city_isolated`), `foundation-core-data-model.md` (`PlayerKind`, `Difficulty`, `AiPersonality`), `foundation-turn-engine.md` (`Command`/`EndTurn`, `validate`), `foundation-scenario-config.md` (personalities per player).
+
+> **Back-reference note:** `gameplay-fog-of-war.md` and `gameplay-caravan-routes.md`
+> should each include a "See also" entry pointing back to this spec, since the AI is a
+> primary consumer of their APIs (fog visibility queries, route state/control queries).
 
 ### 9.1 Extensibility — `ai_plan` as the stable extension point
 

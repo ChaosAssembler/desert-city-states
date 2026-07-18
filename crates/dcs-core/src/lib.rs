@@ -17,6 +17,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod ai;
 pub mod caravan;
 pub mod combat;
 pub mod economy;
@@ -27,6 +28,7 @@ pub mod model;
 pub mod scenario;
 pub mod serialize;
 pub mod turn;
+pub mod victory;
 pub mod world;
 
 // Re-export the shared contract types from dcs-protocol so the whole crate

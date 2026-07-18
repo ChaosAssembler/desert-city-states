@@ -10,7 +10,7 @@
 
 ## 1. Purpose
 
-Specify the three victory types from DD §13, the **`VictoryTracker`** that lives in
+Specify the three threshold-based victory conditions and a turn-limit fallback from DD §13, the **`VictoryTracker`** that lives in
 `GameState` and is updated every end-of-turn, the concrete thresholds (read from
 `ScenarioConfig`, scaled down for small maps / 2 players), the **prestige score
 formula** for V2 (implementing DD §13's `Score = Wealth×1 + Influence×2 + oases×8 +
@@ -185,7 +185,7 @@ winner simply needs the majority of the oases that exist.
 win if exists player p such that:
     holds_required_relics(p)                        // p holds ALL relic sites
     AND for every Relic r with is_relic_site:
-          r.holder == Some(p) AND r.consecutive_turns_held >= relic_hold_turns
+          r.consecutive_turns_held >= relic_hold_turns
 ```
 
 World-gen creates exactly `relic_count` relic sites (scenario-config §7 validates
@@ -212,11 +212,10 @@ does not trigger (a contested relic race continues).
   standing set.
 - **Turn limit:** if `state.turn >= scenario.turn_limit` and no V1/V2/V3 threshold is
   met, the winner is the living player with the **highest `prestige_score`**; tiebreak
-  order: (1) more oases controlled, (2) higher prestige score, (3) lower `PlayerId`
-  (deterministic). `VictoryKind::TurnLimit` now exists (core-data-model §4.10, §10
+  order: (1) more oases controlled, (2) lower `PlayerId` (deterministic). `VictoryKind::TurnLimit` now exists (core-data-model §4.10, §10
   resolved), so this fallback is emitted as `Victory { kind: TurnLimit, winner }`
   — the mechanical winner determination (highest prestige score, tie-broken by oases
-  → score → `PlayerId`) is unchanged, and only the UI label differs from a true
+  → `PlayerId`) is unchanged, and only the UI label differs from a true
   `WealthScore` victory (core-data-model §4.10 note).
 
 ### 6.6 Where it runs
@@ -241,7 +240,7 @@ except the tracker write they own; no RNG is drawn (deterministic).
   only `!defeated` players; defeated players remain in `players` (ID stable) but never
   win.
 - **Determinism:** no RNG, no `HashMap` iteration in the math (tracker maps use
-  `FxHashMap` fixed order, ADR-0006); identical `(seed, commands)` ⇒ identical win.
+  `FxHashMap` fixed order, ARCH §6); identical `(seed, commands)` ⇒ identical win.
 - **Multiple conditions same turn:** if more than one player meets a threshold
   simultaneously, the check returns the player with the highest applicable score /
   earliest `PlayerId` (deterministic); in practice V1/V3 are sole-holder so collisions
@@ -257,7 +256,7 @@ except the tracker write they own; no RNG is drawn (deterministic).
 - [ ] V3: a player solely holding all `relic_count` relic sites, each with `consecutive_turns_held >= relic_hold_turns`, triggers `Victory{RelicHold}`.
 - [ ] V3 does NOT trigger while a relic is contested (holder changed this turn).
 - [ ] Scaling: radius-4 / 2p ⇒ `relic_count==1`, `relic_hold_turns < 10`, `wealth_score_target < 200`; radius-7 / 4p ⇒ defaults unchanged.
-- [ ] Turn limit reached with no threshold ⇒ `Victory{TurnLimit}` for highest-score living player; tiebreak oases then score then PlayerId.
+- [ ] Turn limit reached with no threshold ⇒ `Victory{TurnLimit}` for highest-score living player; tiebreak oases then PlayerId.
 - [ ] `check_victory` is pure read; only `update_victory_tracker` writes the tracker.
 - [ ] `Victory` event emitted exactly once and stops the loop (turn-engine §7).
 - [ ] Same `(scenario, seed, commands)` ⇒ identical victory outcome (determinism).
@@ -267,7 +266,7 @@ except the tracker write they own; no RNG is drawn (deterministic).
 - Design: DD §13 (Victory Conditions) — V1 oasis majority, V2 score (Wealth×1+Influence×2+oases×8+active_routes×4, target 200), V3 relic hold, threshold scaling, turn-limit fallback + tiebreak, MVP ships V1 only but meters built for all three.
 - Architecture: ARCH §13 (Victory Tracking — `VictoryTracker`, the three meters, fallback), §3.1 (`GameState.victory`), §5.3 (victory check at `advance_turn`), §11 (`ScenarioConfig` thresholds).
 - ADRs: ADR-0003 (pure core), ADR-0004 (victory check runs inside the resolver's `advance_turn`), ADR-0006 (determinism — no RNG in victory).
-- Related specs: `foundation-scenario-config.md` (`oasis_majority_pct`, `wealth_score_target`, `relic_count`, `relic_hold_turns`, `turn_limit`, `scale_thresholds`), `foundation-core-data-model.md` (`VictoryTracker`, `VictoryKind`, `Relic`, `Player.resources`), `foundation-turn-engine.md` (`advance_turn` step 1/2, `Victory` event, loop stop), `gameplay-caravan-routes.md` (`RouteStatus::Active` for V2 route count), `gameplay-fog-of-war.md` (relic sites revealed once seen).
+- Related specs: `foundation-scenario-config.md` (`oasis_majority_pct`, `wealth_score_target`, `relic_count`, `relic_hold_turns`, `turn_limit`, `scale_thresholds`), `foundation-core-data-model.md` (`VictoryTracker`, `VictoryKind`, `Relic`, `Player.resources`), `foundation-turn-engine.md` (`advance_turn` step 1/2, `Victory` event, loop stop), `gameplay-caravan-routes.md` (`RouteStatus::Active` for V2 route count), `gameplay-fog-of-war.md` (relic sites revealed once seen), `behavior-ai-opponents.md` (AI victory-pursuit behavior, route-security utility weighting).
 
 ## 10. Open Questions (carried, not resolved)
 
@@ -281,7 +280,7 @@ except the tracker write they own; no RNG is drawn (deterministic).
 - **`VictoryKind::TurnLimit` variant — RESOLVED:** the distinct
   `VictoryKind::TurnLimit` variant now exists in the core data model
   (foundation-core-data-model.md §4.10). The fallback winner determination (highest
-  `prestige_score` living player, tiebreak oases → score → `PlayerId`) is unchanged and
+  `prestige_score` living player, tiebreak oases → `PlayerId`) is unchanged and
   correct; the variant simply gives the UI a distinct label ("Time's up — X wins on
   points") versus a true `WealthScore` victory. Implementation must bump `SAVE_VERSION`
   (core-data-model §4.10 note) since adding an enum variant changes the serialized form.
