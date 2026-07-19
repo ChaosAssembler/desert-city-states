@@ -59,10 +59,17 @@ pub enum SaveError {
 // Core (de)serialization
 // ---------------------------------------------------------------------------
 
-/// Encode a [`GameState`] into the given [`SaveFormat`].
+/// Serialize a game state to bytes using the specified format.
 ///
 /// The state is wrapped in a [`VersionedSave`] envelope carrying the current
 /// [`SAVE_VERSION`] before encoding, so every saved file is self-describing.
+///
+/// # Arguments
+/// * `state` - Game state to serialize
+/// * `fmt` - Output format (JSON, Postcard, or Bincode)
+///
+/// # Returns
+/// `Ok(Vec<u8>)` with the serialized bytes, or `Err(SaveError)` on failure.
 pub fn serialize(state: &GameState, fmt: SaveFormat) -> Result<Vec<u8>, SaveError> {
     let env = VersionedSave {
         version: SAVE_VERSION,
@@ -79,11 +86,19 @@ pub fn serialize(state: &GameState, fmt: SaveFormat) -> Result<Vec<u8>, SaveErro
     }
 }
 
-/// Decode a [`GameState`] from the given [`SaveFormat`].
+/// Deserialize a game state from bytes.
 ///
 /// Decodes the [`VersionedSave`] envelope, rejects saves newer than our schema
 /// version, and runs the (currently empty) forward migration loop before
 /// returning the payload.
+///
+/// # Arguments
+/// * `bytes` - Serialized game state bytes
+/// * `fmt` - Format to use for deserialization
+///
+/// # Returns
+/// `Ok(GameState)` on success, or `Err(SaveError)` if the data is invalid
+/// or uses an unsupported format.
 pub fn deserialize(bytes: &[u8], fmt: SaveFormat) -> Result<GameState, SaveError> {
     let env: VersionedSave<GameState> = match fmt {
         SaveFormat::Json => {

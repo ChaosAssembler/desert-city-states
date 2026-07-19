@@ -48,13 +48,23 @@ pub enum Difficulty {
 // ScenarioConfig
 // ---------------------------------------------------------------------------
 
-/// Tunable configuration describing a single game session.
+/// Configuration for a game scenario.
 ///
-/// `ScenarioConfig` is the single source of truth for map size, player count,
-/// victory conditions, and balance thresholds. It is constructed either via
-/// [`Default`] (full game), [`mvp_preset`] (minimal vertical-slice game), or
-/// [`load`] (deserialized from a JSON file with defaults preserved for absent
-/// fields).
+/// # Serialization Design
+///
+/// `ScenarioConfig` uses a dual-path serialization strategy:
+///
+/// 1. **Derive path** (`Serialize`/`Deserialize`): Used for round-trip serialization
+///    and tests. Requires all non-defaulted fields to be present in JSON.
+///
+/// 2. **Manual `load()` path**: Used for production file loading. Parses JSON into
+///    `serde_json::Value`, then applies field-by-field overrides on top of a base
+///    config (either `Default::default()` or `mvp_preset()`). This provides true
+///    partial override semantics where absent fields retain their base values.
+///
+/// The manual path also supports a `"preset"` key to choose the base config,
+/// and runs `scale_thresholds()` after merging to adjust values based on
+/// map radius and player count.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ScenarioConfig {
     /// Map radius in hexes. MVP uses 4 (= 61 tiles); full game 7-9 (= 169-271).

@@ -892,7 +892,19 @@ fn emit(
 // Public API
 // ---------------------------------------------------------------------------
 
-/// THE public entry. Pure: reads `&GameState`, returns the actor's action Commands.
+/// Generate a list of commands for an AI player.
+///
+/// The AI reads the game state, builds a fog-aware situation snapshot,
+/// generates candidate actions, scores them by personality weights,
+/// validates each via `turn::validate`, and returns a budget-capped list.
+///
+/// # Arguments
+/// * `state` - Current game state (read-only)
+/// * `player` - The AI player to plan for
+/// * `difficulty` - AI difficulty level affecting decision quality
+///
+/// # Returns
+/// A vector of `Command`s the AI wants to execute, ordered by priority.
 ///
 /// The orchestrator appends `EndTurn` before calling `step` — `ai_plan` returns
 /// actions only (no `EndTurn`).
