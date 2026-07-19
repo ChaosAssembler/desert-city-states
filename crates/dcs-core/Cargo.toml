@@ -20,3 +20,7 @@ proptest = "1"
 insta = { version = "1", features = ["json"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
+[[bench]]
+name = "game_benchmarks"
+harness = false
+
