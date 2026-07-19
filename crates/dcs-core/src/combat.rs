@@ -9,7 +9,6 @@ use crate::{
     CityId, CitySpecialization, GameEvent, PlayerId, RouteId, RouteStatus, TileId, UnitAbility,
     UnitId, UnitKind,
 };
-
 // ---------------------------------------------------------------------------
 // Constants (spec §4)
 // ---------------------------------------------------------------------------
@@ -400,10 +399,13 @@ pub fn resolve_city_raid(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
+
     use crate::hex::HexCoord;
-    use crate::model::{Player, Stockpiles, Tile, Unit, UnitAbility};
+    use crate::model::Stockpiles;
     use crate::scenario::mvp_preset;
-    use fxhash::FxHashSet;
+    use crate::test_harness;
+    use crate::{AiPersonality, Difficulty, PlayerKind};
 
     // ---- test harness ------------------------------------------------------
 
@@ -413,47 +415,23 @@ mod tests {
         let cfg = mvp_preset();
         let mut s = GameState::new(cfg, seed);
         let radius = s.scenario.map_radius as u32;
+        test_harness::allocate_hex_grid(&mut s, radius);
 
-        // Allocate all in-map tiles.
-        for coord in crate::hex::range(crate::hex::ORIGIN, radius) {
-            let id = s.alloc_tile_id();
-            s.tiles.push(Tile {
-                id,
-                coord,
-                terrain: TerrainType::Dunes,
-                is_relic_site: false,
-                owner: None,
-                improvement: None,
-            });
-            s.tile_index.insert(coord, id);
-        }
-
-        // Apply terrain overrides.
+        // Apply terrain overrides
         for &(coord, terrain) in terrain_overrides {
-            if let Some(&id) = s.tile_index.get(&coord) {
-                s.tiles[id.0 as usize].terrain = terrain;
-            }
+            test_harness::mark_terrain(&mut s, coord, terrain);
         }
 
-        // Two players.
-        for i in 0..2u32 {
-            let pid = s.alloc_player_id();
-            s.players.push(Player {
-                id: pid,
-                kind: if i == 0 {
-                    crate::PlayerKind::Human
-                } else {
-                    crate::PlayerKind::Ai {
-                        personality: crate::AiPersonality::Expansionist,
-                        difficulty: crate::Difficulty::Normal,
-                    }
-                },
-                color: crate::PlayerColor::Sand,
-                resources: Stockpiles::default(),
-                discovered: FxHashSet::default(),
-                defeated: false,
-            });
-        }
+        // Two players
+        test_harness::create_player(&mut s, PlayerKind::Human, Stockpiles::default());
+        test_harness::create_player(
+            &mut s,
+            PlayerKind::Ai {
+                personality: AiPersonality::Expansionist,
+                difficulty: Difficulty::Normal,
+            },
+            Stockpiles::default(),
+        );
 
         s
     }
@@ -466,17 +444,7 @@ mod tests {
         tile: TileId,
         hp: u32,
     ) -> UnitId {
-        let id = state.alloc_unit_id();
-        state.units.push(Unit {
-            id,
-            owner,
-            kind,
-            tile,
-            hp,
-            moves_left: unit_def(kind).moves,
-            ability: UnitAbility::None,
-        });
-        id
+        test_harness::create_unit_with_hp(state, owner, kind, tile, hp)
     }
 
     // ---- positioning tests --------------------------------------------------
@@ -819,7 +787,7 @@ mod tests {
             stockpiles: Stockpiles::default(),
             route_slots: 2,
             growth_timer: 0,
-            queue: vec![],
+            queue: VecDeque::new(),
         });
 
         let raider = add_unit(&mut s, PlayerId(0), UnitKind::Raider, raider_tile, 4);
@@ -860,7 +828,7 @@ mod tests {
             stockpiles: Stockpiles::default(),
             route_slots: 2,
             growth_timer: 0,
-            queue: vec![],
+            queue: VecDeque::new(),
         });
 
         let raider = add_unit(&mut s, PlayerId(0), UnitKind::Raider, raider_tile, 4);
@@ -900,7 +868,7 @@ mod tests {
             stockpiles: Stockpiles::default(),
             route_slots: 2,
             growth_timer: 0,
-            queue: vec![],
+            queue: VecDeque::new(),
         });
 
         // Raider ON the city tile → capture when pop hits 0.
@@ -945,7 +913,7 @@ mod tests {
             stockpiles: Stockpiles::default(),
             route_slots: 2,
             growth_timer: 0,
-            queue: vec![],
+            queue: VecDeque::new(),
         });
 
         // Raider NOT on the city tile.
@@ -990,7 +958,7 @@ mod tests {
             stockpiles: Stockpiles::default(),
             route_slots: 2,
             growth_timer: 0,
-            queue: vec![],
+            queue: VecDeque::new(),
         });
 
         let raider = add_unit(&mut s, PlayerId(0), UnitKind::Raider, city_tile, 4);

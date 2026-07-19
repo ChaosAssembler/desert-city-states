@@ -32,6 +32,7 @@ use crate::{
     BuildingKind, CityId, CitySpecialization, Command, GameEvent, GameState, PlayerId,
     RejectReason, TileId, UnitId, UnitKind,
 };
+use std::collections::VecDeque;
 
 /// Return the player whose turn it currently is.
 #[inline]
@@ -542,7 +543,7 @@ fn resolve_found_city(
         stockpiles: crate::Stockpiles::default(),
         route_slots: 2,
         growth_timer: 0,
-        queue: vec![],
+        queue: VecDeque::new(),
     };
     state.cities.push(city);
 
@@ -650,10 +651,14 @@ fn resolve_train(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hex::neighbors;
-    use crate::model::{GameState, PlayerKind, Tile};
+    use crate::hex::HexCoord;
+    use crate::model::{GameState, PlayerKind, Stockpiles, TerrainType};
     use crate::scenario::mvp_preset;
-    use crate::{Command, GameEvent, PlayerId, RejectReason, TileId, UnitId, UnitKind};
+    use crate::test_harness;
+    use crate::{
+        AiPersonality, Command, Difficulty, GameEvent, PlayerId, RejectReason, TileId, UnitId,
+        UnitKind,
+    };
 
     // ---- test harness ------------------------------------------------------
 
@@ -667,39 +672,24 @@ mod tests {
         let cfg = mvp_preset();
         let mut s = GameState::new(cfg, 1);
         let radius = s.scenario.map_radius as u32;
+        test_harness::allocate_hex_grid(&mut s, radius);
 
-        // Allocate all in-map tiles.
-        let coords = crate::hex::range(crate::hex::ORIGIN, radius);
-        for c in coords {
-            let id = s.alloc_tile_id();
-            s.tiles.push(Tile {
-                id,
-                coord: c,
-                terrain: crate::TerrainType::Dunes,
-                is_relic_site: false,
-                owner: None,
-                improvement: None,
-            });
-            s.tile_index.insert(c, id);
-        }
-
-        // Mark three oases, well-spaced, at fixed coords for determinism.
+        // Mark three oases
         let oasis_coords = [
-            crate::hex::HexCoord { q: 0, r: 0 },
-            crate::hex::HexCoord { q: 2, r: -2 },
-            crate::hex::HexCoord { q: -2, r: 2 },
+            HexCoord { q: 0, r: 0 },
+            HexCoord { q: 2, r: -2 },
+            HexCoord { q: -2, r: 2 },
         ];
         for &c in &oasis_coords {
-            let id = s.tile_index[&c];
-            s.tiles[id.0 as usize].terrain = crate::TerrainType::Oasis;
+            test_harness::mark_terrain(&mut s, c, TerrainType::Oasis);
         }
 
-        // A ruins/relic site near origin.
-        let ruin_coord = crate::hex::HexCoord { q: 1, r: 0 };
-        let ruin_id = s.tile_index[&ruin_coord];
-        s.tiles[ruin_id.0 as usize].terrain = crate::TerrainType::Ruins;
-        s.tiles[ruin_id.0 as usize].is_relic_site = true;
+        // A ruins/relic site near origin
+        let ruin_coord = HexCoord { q: 1, r: 0 };
+        test_harness::mark_terrain(&mut s, ruin_coord, TerrainType::Ruins);
+        test_harness::mark_relic_site(&mut s, ruin_coord);
         let relic_id = s.alloc_relic_id();
+        let ruin_id = s.tile_index[&ruin_coord];
         s.relics.push(crate::Relic {
             id: relic_id,
             tile: ruin_id,
@@ -707,83 +697,52 @@ mod tests {
             consecutive_turns_held: 0,
         });
 
-        // Players + starting units.
+        // Players + starting units
         for i in 0..s.scenario.player_count as u32 {
-            let pid = s.alloc_player_id();
-            s.players.push(crate::Player {
-                id: pid,
-                kind: if i == 0 {
-                    crate::PlayerKind::Human
+            let pid = test_harness::create_player(
+                &mut s,
+                if i == 0 {
+                    PlayerKind::Human
                 } else {
-                    crate::PlayerKind::Ai {
-                        personality: crate::AiPersonality::Expansionist,
-                        difficulty: crate::Difficulty::Normal,
+                    PlayerKind::Ai {
+                        personality: AiPersonality::Expansionist,
+                        difficulty: Difficulty::Normal,
                     }
                 },
-                color: crate::PlayerColor::Sand,
-                resources: crate::Stockpiles {
+                Stockpiles {
                     water: 0,
                     wealth: 10,
                     influence: FOUND_CITY_INFLUENCE,
                 },
-                discovered: fxhash::FxHashSet::default(),
-                defeated: false,
-            });
+            );
 
-            // Scout on the player's oasis; Guard on an in-map neighbor.
+            // Scout on the player's oasis
             let oasis = oasis_coords[i as usize];
-            let scout_id = s.alloc_unit_id();
             let oasis_tile = s.tile_index[&oasis];
-            s.units.push(crate::Unit {
-                id: scout_id,
-                owner: pid,
-                kind: UnitKind::Scout,
-                tile: oasis_tile,
-                hp: unit_def(UnitKind::Scout).hp as u32,
-                moves_left: unit_def(UnitKind::Scout).moves,
-                ability: crate::UnitAbility::None,
-            });
-            let radius = s.scenario.map_radius as u32;
-            let neighbor = neighbors(oasis)
+            test_harness::create_unit(&mut s, pid, UnitKind::Scout, oasis_tile);
+
+            // Guard on an in-map neighbor
+            let neighbor = crate::hex::neighbors(oasis)
                 .into_iter()
-                .find(|n| in_map(*n, radius))
+                .find(|n| crate::hex::in_map(*n, radius))
                 .unwrap_or(oasis);
-            let guard_id = s.alloc_unit_id();
             let guard_tile = s.tile_index[&neighbor];
-            s.units.push(crate::Unit {
-                id: guard_id,
-                owner: pid,
-                kind: UnitKind::CaravanGuard,
-                tile: guard_tile,
-                hp: unit_def(UnitKind::CaravanGuard).hp as u32,
-                moves_left: unit_def(UnitKind::CaravanGuard).moves,
-                ability: crate::UnitAbility::None,
-            });
+            test_harness::create_unit(&mut s, pid, UnitKind::CaravanGuard, guard_tile);
         }
 
         s
     }
 
     fn player_scout(s: &GameState, p: PlayerId) -> UnitId {
-        s.units
-            .iter()
-            .find(|u| u.owner == p && u.kind == UnitKind::Scout)
-            .expect("scout exists")
-            .id
+        test_harness::find_unit(s, p, UnitKind::Scout)
     }
 
     fn scout_tile(s: &GameState, unit: UnitId) -> TileId {
-        s.units[s.units.iter().position(|u| u.id == unit).unwrap()].tile
+        test_harness::unit_tile(s, unit)
     }
 
     fn neighbor_tile(s: &GameState, tile: TileId) -> TileId {
-        let coord = s.tiles[tile.0 as usize].coord;
-        let radius = s.scenario.map_radius as u32;
-        let n = neighbors(coord)
-            .into_iter()
-            .find(|h| in_map(*h, radius))
-            .unwrap_or(coord);
-        s.tile_index[&n]
+        test_harness::neighbor_tile_in_map(s, tile)
     }
 
     // ---- tests -------------------------------------------------------------

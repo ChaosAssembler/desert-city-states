@@ -291,25 +291,6 @@ pub enum ScenarioError {
     Parse(String),
 }
 
-impl PartialEq for ScenarioError {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (ScenarioError::BadRadius, ScenarioError::BadRadius) => true,
-            (ScenarioError::BadPlayerCount, ScenarioError::BadPlayerCount) => true,
-            (
-                ScenarioError::PersonalityMismatch(a, b),
-                ScenarioError::PersonalityMismatch(c, d),
-            ) => a == c && b == d,
-            (ScenarioError::BadMajority, ScenarioError::BadMajority) => true,
-            (ScenarioError::TooManyRelics, ScenarioError::TooManyRelics) => true,
-            (ScenarioError::BadTurnLimit, ScenarioError::BadTurnLimit) => true,
-            (ScenarioError::NoVictories, ScenarioError::NoVictories) => true,
-            // io/parse errors are not comparable for equality
-            _ => false,
-        }
-    }
-}
-
 /// Validate a [`ScenarioConfig`] against the hard constraints of the engine.
 ///
 /// Returns [`Ok`] if every constraint holds, otherwise the first failing
@@ -401,7 +382,12 @@ mod tests {
             player_count: 1,
             ..Default::default()
         };
-        assert_eq!(validate(&cfg), Err(ScenarioError::BadPlayerCount));
+        let result = validate(&cfg);
+        assert!(
+            matches!(result, Err(ScenarioError::BadPlayerCount)),
+            "expected BadPlayerCount, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -410,7 +396,12 @@ mod tests {
             map_radius: 3,
             ..Default::default()
         };
-        assert_eq!(validate(&cfg), Err(ScenarioError::BadRadius));
+        let result = validate(&cfg);
+        assert!(
+            matches!(result, Err(ScenarioError::BadRadius)),
+            "expected BadRadius, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -420,9 +411,11 @@ mod tests {
             ai_personalities: vec![AiPersonality::Expansionist],
             ..Default::default()
         };
-        assert_eq!(
-            validate(&cfg),
-            Err(ScenarioError::PersonalityMismatch(1, 3))
+        let result = validate(&cfg);
+        assert!(
+            matches!(result, Err(ScenarioError::PersonalityMismatch(1, 3))),
+            "expected PersonalityMismatch(1, 3), got {:?}",
+            result
         );
     }
 
@@ -432,7 +425,12 @@ mod tests {
             oasis_majority_pct: 40,
             ..Default::default()
         };
-        assert_eq!(validate(&cfg), Err(ScenarioError::BadMajority));
+        let result = validate(&cfg);
+        assert!(
+            matches!(result, Err(ScenarioError::BadMajority)),
+            "expected BadMajority, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -441,7 +439,12 @@ mod tests {
             turn_limit: 0,
             ..Default::default()
         };
-        assert_eq!(validate(&cfg), Err(ScenarioError::BadTurnLimit));
+        let result = validate(&cfg);
+        assert!(
+            matches!(result, Err(ScenarioError::BadTurnLimit)),
+            "expected BadTurnLimit, got {:?}",
+            result
+        );
     }
 
     #[test]

@@ -31,6 +31,9 @@ pub mod turn;
 pub mod victory;
 pub mod world;
 
+#[cfg(test)]
+pub mod test_harness;
+
 // Re-export the shared contract types from dcs-protocol so the whole crate
 // and downstream crates use ONE canonical definition. These types are owned by
 // `dcs-protocol` to avoid a circular dependency (see ADR-0007/0008).

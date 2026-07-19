@@ -28,6 +28,7 @@ use crate::{
     AiPersonality, CityId, CitySpecialization, Command, Difficulty, PlayerId, PlayerKind, RouteId,
     RouteStatus, TileId, UnitId, UnitKind,
 };
+use fxhash::FxHashSet;
 
 // ---------------------------------------------------------------------------
 // Category constants (weight-table column indices)
@@ -314,7 +315,7 @@ fn assess(state: &GameState, player: PlayerId) -> Situation {
     let connected = crate::caravan::connected_city_count(state, player);
     if connected < sit.own_cities.len() as u32 {
         // Find cities that are endpoints of no active route.
-        let mut route_endpoints = std::collections::HashSet::new();
+        let mut route_endpoints = FxHashSet::default();
         for route in &state.routes {
             if route.owner == player && route.status == RouteStatus::Active {
                 route_endpoints.insert(route.endpoints.0);
@@ -615,7 +616,7 @@ fn candidates_defend(state: &GameState, _player: PlayerId, sit: &Situation) -> V
 
     // For each exposed route, find the most exposed tile.
     // Dedup: a route can be both exposed AND threatened.
-    let mut seen_routes = std::collections::HashSet::new();
+    let mut seen_routes = FxHashSet::default();
     for &route_id in sit
         .exposed_own_routes
         .iter()
@@ -922,87 +923,49 @@ mod tests {
     use super::*;
     use crate::hex::HexCoord;
     use crate::model::{
-        GameState, Player, PlayerColor, PlayerKind, Stockpiles, TerrainType, Tile, Unit,
-        UnitAbility,
+        GameState, Player, PlayerColor, PlayerKind, Stockpiles, TerrainType, Unit, UnitAbility,
     };
     use crate::scenario::mvp_preset;
+    use crate::test_harness;
     use fxhash::FxHashSet;
+    use std::collections::VecDeque;
 
     /// Build a minimal deterministic `GameState` for AI tests.
     fn make_game() -> GameState {
         let cfg = mvp_preset();
         let mut s = GameState::new(cfg, 1);
         let radius = s.scenario.map_radius as u32;
+        test_harness::allocate_hex_grid(&mut s, radius);
 
-        // Allocate in-map tiles.
-        let coords = crate::hex::range(HexCoord { q: 0, r: 0 }, radius);
-        for c in coords {
-            let id = s.alloc_tile_id();
-            s.tiles.push(Tile {
-                id,
-                coord: c,
-                terrain: TerrainType::Dunes,
-                is_relic_site: false,
-                owner: None,
-                improvement: None,
-            });
-            s.tile_index.insert(c, id);
-        }
-
-        // Mark two oases.
+        // Mark two oases
         let oasis_a = HexCoord { q: 0, r: 0 };
         let oasis_b = HexCoord { q: 2, r: -2 };
-        s.tiles[s.tile_index[&oasis_a].0 as usize].terrain = TerrainType::Oasis;
-        s.tiles[s.tile_index[&oasis_b].0 as usize].terrain = TerrainType::Oasis;
+        test_harness::mark_terrain(&mut s, oasis_a, TerrainType::Oasis);
+        test_harness::mark_terrain(&mut s, oasis_b, TerrainType::Oasis);
 
-        // AI player.
-        let pid = s.alloc_player_id();
-        s.players.push(Player {
-            id: pid,
-            kind: PlayerKind::Ai {
+        // AI player with resources
+        let pid = test_harness::create_player(
+            &mut s,
+            PlayerKind::Ai {
                 personality: AiPersonality::Expansionist,
                 difficulty: Difficulty::Normal,
             },
-            color: PlayerColor::Sand,
-            resources: Stockpiles {
+            Stockpiles {
                 water: 10,
                 wealth: 50,
                 influence: 20,
             },
-            discovered: FxHashSet::default(),
-            defeated: false,
-        });
+        );
 
-        // Reveal some tiles for the player.
+        // Reveal some tiles for the player
         let origin_tile = s.tile_index[&oasis_a];
         crate::fog::reveal(&mut s, pid, origin_tile, 3);
 
-        // A city at the origin.
-        let city_a = s.alloc_city_id();
-        s.cities.push(crate::City {
-            id: city_a,
-            owner: pid,
-            tile: origin_tile,
-            population: 2,
-            specialization: None,
-            buildings: vec![],
-            stockpiles: Stockpiles::default(),
-            route_slots: 2,
-            growth_timer: 0,
-            queue: vec![],
-        });
+        // A city at the origin
+        test_harness::create_city(&mut s, pid, oasis_a, 2);
 
-        // A scout on the origin.
-        let scout_id = s.alloc_unit_id();
-        s.units.push(Unit {
-            id: scout_id,
-            owner: pid,
-            kind: UnitKind::Scout,
-            tile: origin_tile,
-            hp: 3,
-            moves_left: 3,
-            ability: UnitAbility::None,
-        });
+        // A scout on the origin
+        test_harness::create_unit_with_hp(&mut s, pid, UnitKind::Scout, origin_tile, 3);
 
         s
     }
@@ -1136,7 +1099,7 @@ mod tests {
         ];
         assert_eq!(
             cats.len(),
-            cats.iter().collect::<std::collections::HashSet<_>>().len(),
+            cats.iter().collect::<fxhash::FxHashSet<_>>().len(),
             "category constants must be distinct"
         );
     }
@@ -1288,7 +1251,7 @@ mod tests {
             stockpiles: Stockpiles::default(),
             route_slots: 2,
             growth_timer: 0,
-            queue: vec![],
+            queue: VecDeque::new(),
         });
 
         // Reveal tiles around the second city.

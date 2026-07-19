@@ -15,7 +15,6 @@ use crate::model::{INFLUENCE_CAP_BASE, WEALTH_CAP_BASE, terrain_def};
 use crate::{
     BuildingKind, CityId, CitySpecialization, GameEvent, GameState, PlayerId, RouteId, RouteStatus,
 };
-
 // ---------------------------------------------------------------------------
 // Balance constants (spec §4.1 — tunable, DD §18 OQ-1)
 // ---------------------------------------------------------------------------
@@ -57,6 +56,189 @@ pub fn network_wealth_yield(state: &GameState, player: PlayerId) -> u32 {
 }
 
 // ---------------------------------------------------------------------------
+// Income deltas (intermediate breakdown before applying to state)
+// ---------------------------------------------------------------------------
+
+/// Intermediate breakdown of income deltas before applying to state.
+struct IncomeDeltas {
+    water: i32,
+    wealth: i32,
+    influence: i32,
+}
+
+impl IncomeDeltas {
+    fn new() -> Self {
+        Self {
+            water: 0,
+            wealth: 0,
+            influence: 0,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Step helpers — each extracts one phase of the income update
+// ---------------------------------------------------------------------------
+
+/// Step 1: City base yields + building/specialization bonuses.
+///
+/// Computes worked-tile yields (Water, Wealth) and adds building/specialization
+/// bonuses (Well, WellFort, ScholarOutpost, Temple).
+fn compute_city_yields(
+    state: &GameState,
+    _player: PlayerId,
+    city_ids: &[CityId],
+) -> IncomeDeltas {
+    let mut deltas = IncomeDeltas::new();
+    for &city_id in city_ids {
+        let worked = crate::world::worked_tiles(state, city_id);
+        for &tid in &worked {
+            let tile = &state.tiles[tid.0 as usize];
+            let td = terrain_def(tile.terrain);
+            deltas.water += td.water as i32;
+            deltas.wealth += td.wealth as i32;
+        }
+
+        let city = &state.cities[city_id.0 as usize];
+        if city.buildings.contains(&BuildingKind::Well) {
+            deltas.water += 2;
+        }
+        if city.specialization == Some(CitySpecialization::WellFort) {
+            deltas.water += 3;
+        }
+        if city.specialization == Some(CitySpecialization::ScholarOutpost) {
+            deltas.influence += 2;
+        }
+        if city.buildings.contains(&BuildingKind::Temple) {
+            deltas.influence += 1;
+        }
+    }
+    deltas
+}
+
+/// Step 2: Route wealth accumulation + water transfer.
+fn compute_route_income(state: &GameState, player: PlayerId) -> IncomeDeltas {
+    let mut deltas = IncomeDeltas::new();
+    let active_route_ids: Vec<RouteId> = state
+        .routes
+        .iter()
+        .filter(|r| r.owner == player && r.status == RouteStatus::Active)
+        .map(|r| r.id)
+        .collect();
+    for &route_id in &active_route_ids {
+        let route = &state.routes[route_id.0 as usize];
+        deltas.wealth += crate::caravan::route_wealth(state, route) as i32;
+        if crate::caravan::water_transfer(state, route).is_some() {
+            deltas.water += crate::caravan::WATER_TRANSFER_PER_ROUTE;
+        }
+    }
+    deltas
+}
+
+/// Step 3: Route upkeep (−1 Water per owned route).
+fn compute_route_upkeep(state: &GameState, player: PlayerId) -> i32 {
+    let route_count = state.routes.iter().filter(|r| r.owner == player).count() as i32;
+    -(route_count * crate::caravan::ROUTE_UPKEEP_WATER)
+}
+
+/// Step 4: Isolation penalty (−2 Water per isolated city).
+fn compute_isolation_penalty(state: &GameState, city_ids: &[CityId]) -> i32 {
+    let mut penalty = 0i32;
+    for &city_id in city_ids {
+        if is_city_isolated(state, city_id) {
+            penalty += crate::caravan::ISOLATION_PENALTY_WATER;
+        }
+    }
+    penalty
+}
+
+/// Step 5: Unit upkeep (Wealth) — negative flow.
+fn compute_unit_upkeep(state: &GameState, player: PlayerId) -> i32 {
+    let mut upkeep = 0i32;
+    for unit in &state.units {
+        if unit.owner == player {
+            let ki = crate::world::unit_kind_index(&unit.kind);
+            upkeep -= UNIT_UPKEEP[ki];
+        }
+    }
+    upkeep
+}
+
+/// Step 7: Apply deltas to player resources and clamp to caps.
+fn apply_deltas(state: &mut GameState, player: PlayerId, deltas: &IncomeDeltas) {
+    let pi = player.0 as usize;
+    let cap = crate::world::water_cap(state, player);
+    let p = &mut state.players[pi];
+    p.resources.water = p.resources.water.saturating_add(deltas.water as u32);
+    p.resources.wealth = p.resources.wealth.saturating_add(deltas.wealth as u32);
+    p.resources.influence = p.resources
+        .influence
+        .saturating_add(deltas.influence as u32);
+    p.resources.water = p.resources.water.min(cap);
+    p.resources.wealth = p.resources.wealth.min(WEALTH_CAP_BASE);
+    p.resources.influence = p.resources.influence.min(INFLUENCE_CAP_BASE);
+}
+
+/// Step 8: Population growth for all cities.
+fn apply_growth(state: &mut GameState, city_ids: &[CityId]) -> Vec<GameEvent> {
+    let mut events = Vec::new();
+    for &city_id in city_ids {
+        let ge = crate::world::apply_growth(state, city_id);
+        events.extend(ge);
+    }
+    events
+}
+
+/// Step 9: Starvation check — pop −1 when water is 0 and net flow is negative.
+fn apply_starvation(
+    state: &mut GameState,
+    player: PlayerId,
+    city_ids: &[CityId],
+) -> Vec<GameEvent> {
+    let water_after_clamp = state.players[player.0 as usize].resources.water;
+    let mut events = Vec::new();
+
+    for &city_id in city_ids {
+        let ci = city_id.0 as usize;
+        let city_yield = crate::world::city_water_yield(state, city_id) as i32;
+        let isolation = if is_city_isolated(state, city_id) {
+            crate::caravan::ISOLATION_PENALTY_WATER
+        } else {
+            0
+        };
+        let net_flow = city_yield + isolation;
+
+        if water_after_clamp == 0 && net_flow < 0 {
+            let city = &mut state.cities[ci];
+            if city.specialization == Some(CitySpecialization::WellFort) {
+                // Well Fort: never drops below Pop 1.
+            } else {
+                city.population = city.population.saturating_sub(1);
+                let pop = city.population;
+                events.push(GameEvent::Starved {
+                    city: city_id,
+                    population: pop,
+                });
+            }
+        }
+    }
+    events
+}
+
+/// Step 10: Elimination — mark player defeated if no living cities.
+fn apply_elimination(state: &mut GameState, player: PlayerId) {
+    let pi = player.0 as usize;
+    let living_cities = state
+        .cities
+        .iter()
+        .filter(|c| c.owner == player && c.population > 0)
+        .count();
+    if living_cities == 0 {
+        state.players[pi].defeated = true;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Core: per-turn economy update (spec §6.1)
 // ---------------------------------------------------------------------------
 
@@ -79,11 +261,6 @@ pub fn network_wealth_yield(state: &GameState, player: PlayerId) -> u32 {
 /// 9. Starvation
 /// 10. Elimination
 pub fn apply_income(state: &mut GameState, player: PlayerId) -> Vec<GameEvent> {
-    let pi = player.0 as usize;
-    let mut water_delta: i32 = 0;
-    let mut wealth_delta: i32 = 0;
-    let mut influence_delta: i32 = 0;
-
     // Snapshot city IDs to avoid borrow issues.
     let city_ids: Vec<CityId> = state
         .cities
@@ -92,170 +269,48 @@ pub fn apply_income(state: &mut GameState, player: PlayerId) -> Vec<GameEvent> {
         .map(|c| c.id)
         .collect();
 
-    // -----------------------------------------------------------------------
-    // Step 1: City base + worked-ring yields (incl. step 6: building/spec
-    //         Influence, folded in to avoid a second pass).
-    // -----------------------------------------------------------------------
-    for &city_id in &city_ids {
-        let worked = crate::world::worked_tiles(state, city_id);
-        for &tid in &worked {
-            let tile = &state.tiles[tid.0 as usize];
-            let td = terrain_def(tile.terrain);
-            water_delta += td.water as i32;
-            wealth_delta += td.wealth as i32;
-        }
+    // Compute all deltas
+    let mut deltas = IncomeDeltas::new();
 
-        // Building / specialization bonuses (step 6 folded in).
-        let city = &state.cities[city_id.0 as usize];
-        if city.buildings.contains(&BuildingKind::Well) {
-            water_delta += 2;
-        }
-        if city.specialization == Some(CitySpecialization::WellFort) {
-            water_delta += 3;
-        }
-        if city.specialization == Some(CitySpecialization::ScholarOutpost) {
-            influence_delta += 2;
-        }
-        if city.buildings.contains(&BuildingKind::Temple) {
-            influence_delta += 1;
-        }
-    }
+    // Step 1: City yields + building bonuses
+    let city_yields = compute_city_yields(state, player, &city_ids);
+    deltas.water += city_yields.water;
+    deltas.wealth += city_yields.wealth;
+    deltas.influence += city_yields.influence;
 
-    // -----------------------------------------------------------------------
-    // Step 2: Route Wealth / Water transfer.
-    // -----------------------------------------------------------------------
-    let active_route_ids: Vec<RouteId> = state
-        .routes
-        .iter()
-        .filter(|r| r.owner == player && r.status == RouteStatus::Active)
-        .map(|r| r.id)
-        .collect();
+    // Step 2: Route income
+    let route_income = compute_route_income(state, player);
+    deltas.water += route_income.water;
+    deltas.wealth += route_income.wealth;
 
-    for &route_id in &active_route_ids {
-        let route = &state.routes[route_id.0 as usize];
-        let w = crate::caravan::route_wealth(state, route) as i32;
-        wealth_delta += w;
+    // Step 3: Route upkeep
+    deltas.water += compute_route_upkeep(state, player);
 
-        // Water transfer: +WATER_TRANSFER_PER_ROUTE if transfer applies.
-        if crate::caravan::water_transfer(state, route).is_some() {
-            water_delta += crate::caravan::WATER_TRANSFER_PER_ROUTE;
-        }
-    }
+    // Step 4: Isolation penalty
+    deltas.water += compute_isolation_penalty(state, &city_ids);
 
-    // -----------------------------------------------------------------------
-    // Step 3: Route upkeep (−1 Water per owned route).
-    // -----------------------------------------------------------------------
-    let route_count = state.routes.iter().filter(|r| r.owner == player).count() as i32;
-    water_delta -= route_count * crate::caravan::ROUTE_UPKEEP_WATER;
+    // Step 5: Unit upkeep
+    deltas.wealth += compute_unit_upkeep(state, player);
 
-    // -----------------------------------------------------------------------
-    // Step 4: Isolation penalty (−2 Water per isolated city).
-    // -----------------------------------------------------------------------
-    for &city_id in &city_ids {
-        if is_city_isolated(state, city_id) {
-            water_delta += crate::caravan::ISOLATION_PENALTY_WATER;
-        }
-    }
+    // Step 7: Apply deltas and clamp
+    apply_deltas(state, player, &deltas);
 
-    // -----------------------------------------------------------------------
-    // Step 5: Unit upkeep (Wealth) — negative flow.
-    // -----------------------------------------------------------------------
-    for unit in &state.units {
-        if unit.owner == player {
-            let ki = crate::world::unit_kind_index(&unit.kind);
-            wealth_delta -= UNIT_UPKEEP[ki];
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Step 7: Cap & overflow — apply deltas, then clamp to empire_cap.
-    //         Overflow is silently discarded (DD §6.1).
-    // -----------------------------------------------------------------------
-    // Compute cap before taking &mut on player (borrow checker: water_cap
-    // needs an immutable &GameState).
-    let cap = crate::world::water_cap(state, player);
-
-    {
-        let p = &mut state.players[pi];
-        p.resources.water = p.resources.water.saturating_add(water_delta as u32);
-        p.resources.wealth = p.resources.wealth.saturating_add(wealth_delta as u32);
-        p.resources.influence = p.resources.influence.saturating_add(influence_delta as u32);
-
-        p.resources.water = p.resources.water.min(cap);
-        p.resources.wealth = p.resources.wealth.min(WEALTH_CAP_BASE);
-        p.resources.influence = p.resources.influence.min(INFLUENCE_CAP_BASE);
-    }
-
-    // Snapshot water stockpile after clamping (used by starvation check).
-    // Growth (step 8) does not modify the player water stockpile, so this
-    // value is the correct post-production, post-clamp water for step 9.
-    let water_after_clamp = state.players[pi].resources.water;
-
-    // -----------------------------------------------------------------------
-    // Step 8: Growth.
-    // -----------------------------------------------------------------------
+    // Step 8: Growth
     let mut events = Vec::new();
-    for &city_id in &city_ids {
-        let ge = crate::world::apply_growth(state, city_id);
-        events.extend(ge);
-    }
+    events.extend(apply_growth(state, &city_ids));
 
-    // -----------------------------------------------------------------------
-    // Step 9: Starvation.
-    // -----------------------------------------------------------------------
-    // Per spec §6.1/§6.4: a city starves when the player's Water stockpile
-    // is 0 AND the city's own per-turn Water delta (yield − isolation) is
-    // negative. Well Fort cannot drop below Pop 1.
+    // Step 9: Starvation
+    events.extend(apply_starvation(state, player, &city_ids));
 
-    for &city_id in &city_ids {
-        let ci = city_id.0 as usize;
+    // Step 10: Elimination
+    apply_elimination(state, player);
 
-        // City's own water yield (worked tiles + buildings + spec).
-        let city_yield = crate::world::city_water_yield(state, city_id) as i32;
-
-        // Per-city isolation penalty (step 4 above).
-        let isolation = if is_city_isolated(state, city_id) {
-            crate::caravan::ISOLATION_PENALTY_WATER
-        } else {
-            0
-        };
-
-        let net_flow = city_yield + isolation;
-
-        if water_after_clamp == 0 && net_flow < 0 {
-            let city = &mut state.cities[ci];
-            if city.specialization == Some(CitySpecialization::WellFort) {
-                // Well Fort: never drops below Pop 1.
-                // (If pop is already 1, nothing happens.)
-            } else {
-                city.population = city.population.saturating_sub(1);
-                let pop = city.population;
-                events.push(GameEvent::Starved {
-                    city: city_id,
-                    population: pop,
-                });
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Step 10: Elimination.
-    // -----------------------------------------------------------------------
-    let living_cities = state
-        .cities
-        .iter()
-        .filter(|c| c.owner == player && c.population > 0)
-        .count();
-    if living_cities == 0 {
-        state.players[pi].defeated = true;
-    }
-
-    // Emit the Income summary event.
+    // Emit income summary
     events.push(GameEvent::Income {
         player,
-        water: water_delta,
-        wealth: wealth_delta,
-        influence: influence_delta,
+        water: deltas.water,
+        wealth: deltas.wealth,
+        influence: deltas.influence,
     });
 
     events
@@ -268,11 +323,10 @@ pub fn apply_income(state: &mut GameState, player: PlayerId) -> Vec<GameEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::hex::HexCoord;
-    use crate::model::{
-        GameState, Player, PlayerKind, Stockpiles, TerrainType, Tile, WATER_CAP_BASE,
-    };
-    use crate::scenario::mvp_preset;
+    use crate::model::{GameState, Player, PlayerKind, Stockpiles, TerrainType, WATER_CAP_BASE};
+    use crate::test_harness;
     use crate::{CaravanRoute, PlayerColor, PlayerId, RouteId, RouteStatus, UnitId, UnitKind};
 
     /// Build a minimal deterministic `GameState` for economy tests.
@@ -280,100 +334,27 @@ mod tests {
     /// Single player, two oasis cities on a hex map of radius 2, with tiles
     /// surrounding each city. No routes by default — isolation is the default.
     fn make_game() -> GameState {
-        let cfg = mvp_preset();
-        let mut s = GameState::new(cfg, 1);
-        let radius = s.scenario.map_radius as u32;
+        let mut s = test_harness::minimal_state();
+        let pid = PlayerId(0);
 
-        // Allocate in-map tiles.
-        let coords = crate::hex::range(HexCoord { q: 0, r: 0 }, radius);
-        for c in coords {
-            let id = s.alloc_tile_id();
-            s.tiles.push(Tile {
-                id,
-                coord: c,
-                terrain: TerrainType::Dunes,
-                is_relic_site: false,
-                owner: None,
-                improvement: None,
-            });
-            s.tile_index.insert(c, id);
-        }
+        // Reset resources to values below caps so clamping doesn't interfere
+        // with delta-based assertions. (WEALTH_CAP=50, INFLUENCE_CAP=30)
+        s.players[0].resources = Stockpiles { water: 10, wealth: 10, influence: 10 };
 
-        // Mark origin as oasis.
-        let origin_id = s.tile_index[&HexCoord { q: 0, r: 0 }];
-        s.tiles[origin_id.0 as usize].terrain = TerrainType::Oasis;
-
-        // Mark a second oasis nearby.
+        // Mark second oasis
         let second_oasis = HexCoord { q: 2, r: -2 };
-        if let Some(&sid) = s.tile_index.get(&second_oasis) {
-            s.tiles[sid.0 as usize].terrain = TerrainType::Oasis;
-        }
+        test_harness::mark_terrain(&mut s, second_oasis, TerrainType::Oasis);
 
-        // Single player.
-        let pid = s.alloc_player_id();
-        s.players.push(Player {
-            id: pid,
-            kind: PlayerKind::Human,
-            color: PlayerColor::Sand,
-            resources: Stockpiles {
-                water: 10,
-                wealth: 10,
-                influence: 10,
-            },
-            discovered: fxhash::FxHashSet::default(),
-            defeated: false,
-        });
-
-        // City A at origin.
-        let city_a = s.alloc_city_id();
-        s.cities.push(crate::City {
-            id: city_a,
-            owner: pid,
-            tile: origin_id,
-            population: 2,
-            specialization: None,
-            buildings: vec![],
-            stockpiles: Stockpiles::default(),
-            route_slots: 2,
-            growth_timer: 0,
-            queue: vec![],
-        });
-
-        // City B at second oasis.
-        let city_b = s.alloc_city_id();
-        let city_b_tile = s.tile_index[&second_oasis];
-        s.cities.push(crate::City {
-            id: city_b,
-            owner: pid,
-            tile: city_b_tile,
-            population: 2,
-            specialization: None,
-            buildings: vec![],
-            stockpiles: Stockpiles::default(),
-            route_slots: 2,
-            growth_timer: 0,
-            queue: vec![],
-        });
+        // Two cities
+        test_harness::create_city(&mut s, pid, crate::hex::ORIGIN, 2);
+        test_harness::create_city(&mut s, pid, second_oasis, 2);
 
         s
     }
 
     /// Create an active route between two cities for testing.
     fn add_active_route(state: &mut GameState, from: CityId, to: CityId) {
-        let route_id = RouteId(state.routes.len() as u32);
-        state.routes.push(CaravanRoute {
-            id: route_id,
-            owner: state.cities[from.0 as usize].owner,
-            endpoints: (from, to),
-            path: vec![
-                state.cities[from.0 as usize].tile,
-                state.cities[to.0 as usize].tile,
-            ],
-            status: RouteStatus::Active,
-            length: 2,
-            upkeep: crate::caravan::ROUTE_UPKEEP_WATER as u8,
-            consecutive_threatened: 0,
-        });
+        test_harness::create_active_route(state, from, to);
     }
 
     // ---- is_city_isolated --------------------------------------------------

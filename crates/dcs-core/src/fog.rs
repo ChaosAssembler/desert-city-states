@@ -24,7 +24,6 @@ use crate::{
     BuildingKind, CityId, CitySpecialization, GameEvent, PlayerId, RouteId, TileId, UnitId,
     UnitKind,
 };
-
 // ---------------------------------------------------------------------------
 // Reveal radius constants (fog-of-war spec §4)
 // ---------------------------------------------------------------------------
@@ -206,62 +205,33 @@ pub fn refresh_city_fog(state: &mut GameState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{GameState, Player, Stockpiles, Tile, Unit, UnitAbility};
+    use std::collections::VecDeque;
+
+    use crate::model::{GameState, Stockpiles};
     use crate::scenario::mvp_preset;
-    use fxhash::FxHashSet;
+    use crate::test_harness;
 
     /// Build a minimal game state with a small hex map for fog tests.
     fn make_game() -> GameState {
         let cfg = mvp_preset();
         let mut s = GameState::new(cfg, 1);
         let radius = s.scenario.map_radius as u32;
+        test_harness::allocate_hex_grid(&mut s, radius);
 
-        // Allocate all in-map tiles.
-        for coord in crate::hex::range(crate::hex::ORIGIN, radius) {
-            let id = s.alloc_tile_id();
-            s.tiles.push(Tile {
-                id,
-                coord,
-                terrain: crate::TerrainType::Dunes,
-                is_relic_site: false,
-                owner: None,
-                improvement: None,
-            });
-            s.tile_index.insert(coord, id);
-        }
+        // Two players
+        test_harness::create_player(&mut s, crate::PlayerKind::Human, Stockpiles::default());
+        test_harness::create_player(
+            &mut s,
+            crate::PlayerKind::Ai {
+                personality: crate::AiPersonality::Expansionist,
+                difficulty: crate::Difficulty::Normal,
+            },
+            Stockpiles::default(),
+        );
 
-        // Two players.
-        for i in 0..2u32 {
-            let pid = s.alloc_player_id();
-            s.players.push(Player {
-                id: pid,
-                kind: if i == 0 {
-                    crate::PlayerKind::Human
-                } else {
-                    crate::PlayerKind::Ai {
-                        personality: crate::AiPersonality::Expansionist,
-                        difficulty: crate::Difficulty::Normal,
-                    }
-                },
-                color: crate::PlayerColor::Sand,
-                resources: Stockpiles::default(),
-                discovered: FxHashSet::default(),
-                defeated: false,
-            });
-        }
-
-        // A scout for player 0 on the origin tile.
+        // A scout for player 0 on the origin tile
         let origin_tile = s.tile_index[&crate::hex::ORIGIN];
-        let scout_id = s.alloc_unit_id();
-        s.units.push(Unit {
-            id: scout_id,
-            owner: PlayerId(0),
-            kind: UnitKind::Scout,
-            tile: origin_tile,
-            hp: 3,
-            moves_left: 3,
-            ability: UnitAbility::None,
-        });
+        test_harness::create_unit_with_hp(&mut s, PlayerId(0), UnitKind::Scout, origin_tile, 3);
 
         s
     }
@@ -368,7 +338,7 @@ mod tests {
             stockpiles: Stockpiles::default(),
             route_slots: 2,
             growth_timer: 0,
-            queue: vec![],
+            queue: VecDeque::new(),
         });
         assert_eq!(city_sight(&s, city_id), SIGHT_CITY_BASE);
     }
@@ -388,7 +358,7 @@ mod tests {
             stockpiles: Stockpiles::default(),
             route_slots: 2,
             growth_timer: 0,
-            queue: vec![],
+            queue: VecDeque::new(),
         });
         assert_eq!(
             city_sight(&s, city_id),

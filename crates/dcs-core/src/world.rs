@@ -7,15 +7,14 @@
 use crate::hex::range;
 use crate::model::{
     BUILD_COST, FORTRESS_TRAIN_DISCOUNT, GRANARY_WATER_BONUS, GROWTH_PERIOD_TURNS,
-    GROWTH_WATER_THRESHOLD, INFLUENCE_CAP_BASE, POP_FOR_SPECIALIZE, SPECIALIZE_COST_INFLUENCE,
-    TERRAIN, TRADE_HUB_MARKET_DISCOUNT, UNIT_CAP_BASE, UNIT_TRAIN_COST, WATER_CAP_BASE,
-    WEALTH_CAP_BASE, unit_def,
+    GROWTH_WATER_THRESHOLD, POP_FOR_SPECIALIZE, SPECIALIZE_COST_INFLUENCE, TERRAIN,
+    TRADE_HUB_MARKET_DISCOUNT, UNIT_CAP_BASE, UNIT_TRAIN_COST, WATER_CAP_BASE, unit_def,
 };
 use crate::{
     BuildingKind, CityId, CitySpecialization, Command, GameEvent, GameState, PlayerId, QueuedOrder,
     RejectReason, TileId, UnitKind,
 };
-use std::collections::HashSet;
+use fxhash::FxHashSet;
 
 // ---------------------------------------------------------------------------
 // Index helpers (free functions — cannot impl foreign types)
@@ -80,6 +79,79 @@ pub fn is_founding_unit(kind: UnitKind) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Shared validation helpers
+// ---------------------------------------------------------------------------
+
+/// Validate and look up a city for a build/specialize command.
+/// Returns `(city_id, city_index, &City)` or `Err(RejectReason)`.
+fn validate_city_for_command(
+    state: &GameState,
+    actor: PlayerId,
+    city_id: CityId,
+) -> Result<(CityId, usize, &crate::City), RejectReason> {
+    let ci = city_id.0 as usize;
+    let city = state.cities.get(ci).ok_or(RejectReason::InvalidState)?;
+    if city.owner != actor {
+        return Err(RejectReason::InvalidState);
+    }
+    Ok((city_id, ci, city))
+}
+
+/// Check if a building can be built in a city.
+/// Returns the (possibly discounted) building cost or `Err(RejectReason)`.
+fn validate_build_conditions(
+    state: &GameState,
+    city: &crate::City,
+    building: &BuildingKind,
+) -> Result<u32, RejectReason> {
+    let bs = building_slots(city) as usize;
+    if city.buildings.len() >= bs {
+        return Err(RejectReason::Blocked);
+    }
+    if city.buildings.contains(building) {
+        return Err(RejectReason::InvalidState);
+    }
+
+    // Calculate cost (with TradeHub Market discount).
+    let base_cost = BUILD_COST[building_index(building)];
+    let cost = if *building == BuildingKind::Market
+        && city.specialization == Some(CitySpecialization::TradeHub)
+    {
+        base_cost.saturating_sub(TRADE_HUB_MARKET_DISCOUNT)
+    } else {
+        base_cost
+    };
+
+    let player = &state.players[city.owner.0 as usize];
+    if player.resources.wealth < cost {
+        return Err(RejectReason::NoResource);
+    }
+
+    Ok(cost)
+}
+
+/// Check if a city can specialize.
+/// Returns the influence cost or `Err(RejectReason)`.
+fn validate_specialize_conditions(
+    state: &GameState,
+    city: &crate::City,
+) -> Result<u32, RejectReason> {
+    if city.population < POP_FOR_SPECIALIZE {
+        return Err(RejectReason::InvalidState);
+    }
+    if city.specialization.is_some() {
+        return Err(RejectReason::InvalidState);
+    }
+
+    let player = &state.players[city.owner.0 as usize];
+    if player.resources.influence < SPECIALIZE_COST_INFLUENCE {
+        return Err(RejectReason::NoResource);
+    }
+
+    Ok(SPECIALIZE_COST_INFLUENCE)
+}
+
+// ---------------------------------------------------------------------------
 // Build resolution
 // ---------------------------------------------------------------------------
 
@@ -95,56 +167,32 @@ pub fn resolve_build(
         building,
     };
 
-    // Validate: city exists and is owned by actor.
-    let city = match state.cities.get(city_id.0 as usize) {
-        Some(c) if c.owner == actor => c,
-        _ => {
+    // Defense-in-depth: validate via shared helpers (validate() already ran).
+    let (_cid, ci, _city) = match validate_city_for_command(state, actor, city_id) {
+        Ok(v) => v,
+        Err(r) => {
             return vec![GameEvent::Rejected {
                 command: cmd,
-                reason: RejectReason::InvalidState,
-            }];
+                reason: r,
+            }]
         }
     };
 
-    // Validate: building slots available.
-    if city.buildings.len() >= building_slots(city) as usize {
-        return vec![GameEvent::Rejected {
-            command: cmd,
-            reason: RejectReason::Blocked,
-        }];
-    }
-
-    // Validate: building not already present (single-tier MVP).
-    if city.buildings.contains(&building) {
-        return vec![GameEvent::Rejected {
-            command: cmd,
-            reason: RejectReason::InvalidState,
-        }];
-    }
-
-    // Calculate cost (Trade Hub discount for Market).
-    let base_cost = BUILD_COST[building_index(&building)];
-    let cost = if building == BuildingKind::Market
-        && city.specialization == Some(CitySpecialization::TradeHub)
-    {
-        base_cost.saturating_sub(TRADE_HUB_MARKET_DISCOUNT)
-    } else {
-        base_cost
+    let cost = match validate_build_conditions(state, &state.cities[ci], &building) {
+        Ok(c) => c,
+        Err(r) => {
+            return vec![GameEvent::Rejected {
+                command: cmd,
+                reason: r,
+            }]
+        }
     };
-
-    // Validate: enough wealth.
-    if state.players[actor.0 as usize].resources.wealth < cost {
-        return vec![GameEvent::Rejected {
-            command: cmd,
-            reason: RejectReason::NoResource,
-        }];
-    }
 
     // Spend wealth.
     state.players[actor.0 as usize].resources.wealth -= cost;
 
     // Add building.
-    state.cities[city_id.0 as usize].buildings.push(building);
+    state.cities[ci].buildings.push(building);
 
     vec![GameEvent::Built {
         city: city_id,
@@ -168,46 +216,32 @@ pub fn resolve_specialize(
         spec,
     };
 
-    // Validate: city exists and is owned by actor.
-    let city = match state.cities.get(city_id.0 as usize) {
-        Some(c) if c.owner == actor => c,
-        _ => {
+    // Defense-in-depth: validate via shared helpers (validate() already ran).
+    let (_cid, ci, _city) = match validate_city_for_command(state, actor, city_id) {
+        Ok(v) => v,
+        Err(r) => {
             return vec![GameEvent::Rejected {
                 command: cmd,
-                reason: RejectReason::InvalidState,
-            }];
+                reason: r,
+            }]
         }
     };
 
-    // Validate: population >= 3.
-    if city.population < POP_FOR_SPECIALIZE {
-        return vec![GameEvent::Rejected {
-            command: cmd,
-            reason: RejectReason::InvalidState,
-        }];
-    }
-
-    // Validate: not already specialized.
-    if city.specialization.is_some() {
-        return vec![GameEvent::Rejected {
-            command: cmd,
-            reason: RejectReason::InvalidState,
-        }];
-    }
-
-    // Validate: enough influence.
-    if state.players[actor.0 as usize].resources.influence < SPECIALIZE_COST_INFLUENCE {
-        return vec![GameEvent::Rejected {
-            command: cmd,
-            reason: RejectReason::NoResource,
-        }];
-    }
+    match validate_specialize_conditions(state, &state.cities[ci]) {
+        Ok(_cost) => {}
+        Err(r) => {
+            return vec![GameEvent::Rejected {
+                command: cmd,
+                reason: r,
+            }]
+        }
+    };
 
     // Spend influence.
     state.players[actor.0 as usize].resources.influence -= SPECIALIZE_COST_INFLUENCE;
 
     // Set specialization.
-    state.cities[city_id.0 as usize].specialization = Some(spec);
+    state.cities[ci].specialization = Some(spec);
 
     vec![GameEvent::Specialized {
         city: city_id,
@@ -225,7 +259,7 @@ pub fn process_queue(state: &mut GameState, city_id: CityId) -> Vec<GameEvent> {
     let mut events = Vec::new();
     let city_idx = city_id.0 as usize;
 
-    while let Some(order) = state.cities[city_idx].queue.first().cloned() {
+    while let Some(order) = state.cities[city_idx].queue.front().cloned() {
         let result = match order {
             QueuedOrder::Build(building) => {
                 if state.cities[city_idx].buildings.len()
@@ -317,7 +351,7 @@ pub fn process_queue(state: &mut GameState, city_id: CityId) -> Vec<GameEvent> {
         };
 
         if let Some(event) = result {
-            state.cities[city_idx].queue.remove(0);
+            state.cities[city_idx].queue.pop_front();
             events.push(event);
         } else {
             break;
@@ -402,8 +436,8 @@ pub fn unit_cap(state: &GameState, player: PlayerId) -> u32 {
 
 /// Fortress cities project Zone of Control onto the city tile plus its 6
 /// immediate neighbors.
-pub fn zone_of_control(state: &GameState, player: PlayerId) -> HashSet<TileId> {
-    let mut zoc = HashSet::new();
+pub fn zone_of_control(state: &GameState, player: PlayerId) -> FxHashSet<TileId> {
+    let mut zoc = FxHashSet::default();
 
     for city in &state.cities {
         if city.owner == player && city.specialization == Some(CitySpecialization::Fortress) {
@@ -440,16 +474,6 @@ pub fn water_cap(state: &GameState, player: PlayerId) -> u32 {
     WATER_CAP_BASE + granaries * GRANARY_WATER_BONUS
 }
 
-/// Get the wealth cap for a player (base, no building bonuses in MVP).
-pub fn _wealth_cap(_state: &GameState, _player: PlayerId) -> u32 {
-    WEALTH_CAP_BASE
-}
-
-/// Get the influence cap for a player (base, no building bonuses in MVP).
-pub fn _influence_cap(_state: &GameState, _player: PlayerId) -> u32 {
-    INFLUENCE_CAP_BASE
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -457,66 +481,19 @@ pub fn _influence_cap(_state: &GameState, _player: PlayerId) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hex::HexCoord;
-    use crate::model::{GameState, Player, PlayerKind, Stockpiles, TerrainType, Tile};
-    use crate::scenario::mvp_preset;
-    use crate::{PlayerColor, PlayerId, TileId};
+    use crate::model::GameState;
+    use crate::test_harness;
+    use crate::{PlayerId, Stockpiles, TerrainType, TileId};
+    use std::collections::VecDeque;
 
     /// Build a minimal deterministic `GameState` for tests.
     fn make_game() -> GameState {
-        let cfg = mvp_preset();
-        let mut s = GameState::new(cfg, 1);
-        let radius = s.scenario.map_radius as u32;
-
-        // Allocate in-map tiles.
-        let coords = crate::hex::range(crate::hex::HexCoord { q: 0, r: 0 }, radius);
-        for c in coords {
-            let id = s.alloc_tile_id();
-            s.tiles.push(Tile {
-                id,
-                coord: c,
-                terrain: TerrainType::Dunes,
-                is_relic_site: false,
-                owner: None,
-                improvement: None,
-            });
-            s.tile_index.insert(c, id);
-        }
-
-        // Mark an oasis at the origin.
-        let origin_id = s.tile_index[&HexCoord { q: 0, r: 0 }];
-        s.tiles[origin_id.0 as usize].terrain = TerrainType::Oasis;
-
-        // Single player with resources.
-        let pid = s.alloc_player_id();
-        s.players.push(Player {
-            id: pid,
-            kind: PlayerKind::Human,
-            color: PlayerColor::Sand,
-            resources: Stockpiles {
-                water: 10,
-                wealth: 100,
-                influence: 50,
-            },
-            discovered: fxhash::FxHashSet::default(),
-            defeated: false,
-        });
-
-        // A city at the origin.
-        let city_id = s.alloc_city_id();
-        s.cities.push(crate::City {
-            id: city_id,
-            owner: pid,
-            tile: origin_id,
-            population: 2,
-            specialization: None,
-            buildings: vec![],
-            stockpiles: Stockpiles::default(),
-            route_slots: 2,
-            growth_timer: 0,
-            queue: vec![],
-        });
-
+        let mut s = test_harness::minimal_state();
+        // minimal_state already creates 1 Human player with wealth=100, influence=50
+        // and marks origin as Oasis
+        let pid = PlayerId(0);
+        let origin = crate::hex::ORIGIN;
+        test_harness::create_city(&mut s, pid, origin, 2);
         s
     }
 
@@ -542,7 +519,7 @@ mod tests {
             stockpiles: Stockpiles::default(),
             route_slots: 2,
             growth_timer: 0,
-            queue: vec![],
+            queue: VecDeque::new(),
         };
         assert_eq!(building_slots(&city), 5); // 2 + 6/2
     }
@@ -559,7 +536,7 @@ mod tests {
             stockpiles: Stockpiles::default(),
             route_slots: 2,
             growth_timer: 0,
-            queue: vec![],
+            queue: VecDeque::new(),
         };
         assert_eq!(building_slots(&city), 2); // 2 + 0/2
     }
@@ -689,10 +666,10 @@ mod tests {
     #[test]
     fn process_queue_builds_in_order() {
         let mut s = make_game();
-        s.cities[0].queue = vec![
+        s.cities[0].queue = VecDeque::from([
             QueuedOrder::Build(BuildingKind::Well),
             QueuedOrder::Build(BuildingKind::Market),
-        ];
+        ]);
         let events = process_queue(&mut s, CityId(0));
         assert_eq!(events.len(), 2);
         assert!(s.cities[0].buildings.contains(&BuildingKind::Well));
@@ -705,10 +682,10 @@ mod tests {
         let mut s = make_game();
         // Well costs 8, Market costs 10, total 18. Give only 12.
         s.players[0].resources.wealth = 12;
-        s.cities[0].queue = vec![
+        s.cities[0].queue = VecDeque::from([
             QueuedOrder::Build(BuildingKind::Well),
             QueuedOrder::Build(BuildingKind::Market),
-        ];
+        ]);
         let events = process_queue(&mut s, CityId(0));
         assert_eq!(events.len(), 1); // Only Well built.
         assert!(s.cities[0].buildings.contains(&BuildingKind::Well));

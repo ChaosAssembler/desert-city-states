@@ -20,6 +20,7 @@ use crate::{
 use fxhash::{FxHashMap, FxHashSet};
 use nanorand::{Rng, SeedableRng, WyRand};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 
 // ---------------------------------------------------------------------------
 // Seeded PRNG (ADR-0006)
@@ -228,7 +229,7 @@ pub struct City {
     /// Turns until the next growth tick.
     pub growth_timer: u32,
     /// Production queue of pending orders.
-    pub queue: Vec<QueuedOrder>,
+    pub queue: VecDeque<QueuedOrder>,
 }
 
 /// A mobile unit.

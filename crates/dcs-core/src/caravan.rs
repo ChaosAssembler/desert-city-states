@@ -22,6 +22,7 @@ use crate::{
     BuildingKind, CaravanRoute, CityId, CitySpecialization, Command, GameEvent, PlayerId,
     RejectReason, RouteId, RouteStatus, TerrainType, TileId, UnitAbility, UnitKind,
 };
+use fxhash::FxHashSet;
 
 // ---------------------------------------------------------------------------
 // Balance constants (spec §4.1 — tunable, DD §18 OQ-1)
@@ -410,7 +411,7 @@ pub fn network_synergy(state: &GameState, player: PlayerId) -> f32 {
 /// cities are transitively connected.
 pub fn connected_city_count(state: &GameState, player: PlayerId) -> u32 {
     // Count all player cities that are part of a connected component (have at least one active route).
-    let mut connected = std::collections::HashSet::new();
+    let mut connected = FxHashSet::default();
     for route in &state.routes {
         if route.owner == player && route.status == RouteStatus::Active {
             connected.insert(route.endpoints.0);
@@ -593,82 +594,25 @@ fn has_guard_controlling_exposed(state: &GameState, owner: PlayerId, path: &[Til
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::hex::HexCoord;
-    use crate::model::{Player, PlayerKind, Stockpiles, Tile};
     use crate::scenario::mvp_preset;
-    use crate::{GameState, PlayerColor, PlayerId, TileId};
+    use crate::test_harness;
+    use crate::{GameState, PlayerId, TileId};
 
     /// Build a minimal deterministic `GameState` with two cities for route
     /// testing. Player 0 owns two oasis cities connected by dunes.
     fn make_game_with_two_cities() -> GameState {
-        let cfg = mvp_preset();
-        let mut s = GameState::new(cfg, 1);
-        let radius = s.scenario.map_radius as u32;
+        let mut s = test_harness::minimal_state();
+        let pid = PlayerId(0);
 
-        // Allocate in-map tiles.
-        let coords = crate::hex::range(HexCoord { q: 0, r: 0 }, radius);
-        for c in coords {
-            let id = s.alloc_tile_id();
-            s.tiles.push(Tile {
-                id,
-                coord: c,
-                terrain: TerrainType::Dunes,
-                is_relic_site: false,
-                owner: None,
-                improvement: None,
-            });
-            s.tile_index.insert(c, id);
-        }
+        // Mark second oasis
+        let second_oasis = HexCoord { q: 2, r: -2 };
+        test_harness::mark_terrain(&mut s, second_oasis, TerrainType::Oasis);
 
-        // Mark two oases.
-        let oasis_a = HexCoord { q: 0, r: 0 };
-        let oasis_b = HexCoord { q: 2, r: -2 };
-        s.tiles[s.tile_index[&oasis_a].0 as usize].terrain = TerrainType::Oasis;
-        s.tiles[s.tile_index[&oasis_b].0 as usize].terrain = TerrainType::Oasis;
-
-        // Single player with resources.
-        let pid = s.alloc_player_id();
-        s.players.push(Player {
-            id: pid,
-            kind: PlayerKind::Human,
-            color: PlayerColor::Sand,
-            resources: Stockpiles {
-                water: 10,
-                wealth: 100,
-                influence: 50,
-            },
-            discovered: fxhash::FxHashSet::default(),
-            defeated: false,
-        });
-
-        // Two cities.
-        let city_a = s.alloc_city_id();
-        s.cities.push(crate::City {
-            id: city_a,
-            owner: pid,
-            tile: s.tile_index[&oasis_a],
-            population: 3,
-            specialization: None,
-            buildings: vec![],
-            stockpiles: Stockpiles::default(),
-            route_slots: 2,
-            growth_timer: 0,
-            queue: vec![],
-        });
-
-        let city_b = s.alloc_city_id();
-        s.cities.push(crate::City {
-            id: city_b,
-            owner: pid,
-            tile: s.tile_index[&oasis_b],
-            population: 3,
-            specialization: None,
-            buildings: vec![],
-            stockpiles: Stockpiles::default(),
-            route_slots: 2,
-            growth_timer: 0,
-            queue: vec![],
-        });
+        // Two cities with population 3
+        test_harness::create_city(&mut s, pid, crate::hex::ORIGIN, 3);
+        test_harness::create_city(&mut s, pid, second_oasis, 3);
 
         s
     }

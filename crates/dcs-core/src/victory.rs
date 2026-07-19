@@ -317,9 +317,9 @@ pub fn update_victory_tracker(state: &mut GameState) -> Vec<GameEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Player, PlayerColor, PlayerKind, Relic, Stockpiles, Tile};
+    use crate::model::{PlayerKind, Relic, Stockpiles, Tile};
     use crate::scenario::ScenarioConfig;
-    use fxhash::FxHashSet;
+    use crate::test_harness;
 
     /// Build a minimal test state.
     fn make_state() -> GameState {
@@ -366,32 +366,26 @@ mod tests {
         }
 
         // Player 0
-        s.players.push(Player {
-            id: PlayerId(0),
-            kind: PlayerKind::Human,
-            color: PlayerColor::Sand,
-            resources: Stockpiles {
+        test_harness::create_player(
+            &mut s,
+            PlayerKind::Human,
+            Stockpiles {
                 water: 0,
                 wealth: 50,
                 influence: 10,
             },
-            discovered: FxHashSet::default(),
-            defeated: false,
-        });
+        );
 
         // Player 1
-        s.players.push(Player {
-            id: PlayerId(1),
-            kind: PlayerKind::Human,
-            color: PlayerColor::Sand,
-            resources: Stockpiles {
+        test_harness::create_player(
+            &mut s,
+            PlayerKind::Human,
+            Stockpiles {
                 water: 0,
                 wealth: 30,
                 influence: 5,
             },
-            discovered: FxHashSet::default(),
-            defeated: false,
-        });
+        );
 
         // Relic on the ruins tile.
         let relic_tile = s.tile_index[&crate::hex::HexCoord { q: 0, r: -1 }];
