@@ -263,18 +263,6 @@ pub fn cube_round(x: f32, y: f32, z: f32) -> (i32, i32, i32) {
     (rx as i32, ry as i32, rz as i32)
 }
 
-/// Deprecated: Use `h.neighbors()` instead.
-#[deprecated(note = "Use method syntax: h.neighbors()")]
-pub fn neighbors(h: HexCoord) -> [HexCoord; 6] {
-    h.neighbors()
-}
-
-/// Deprecated: Use `a.distance(b)` instead.
-#[deprecated(note = "Use method syntax: a.distance(b)")]
-pub fn distance(a: HexCoord, b: HexCoord) -> u32 {
-    a.distance(b)
-}
-
 /// Return the ring of hexes at exactly `radius` steps from `center`.
 ///
 /// `ring(center, 0)` returns `[center]`; otherwise it returns exactly
@@ -306,15 +294,6 @@ pub fn ring(center: HexCoord, radius: u32) -> Vec<HexCoord> {
     result
 }
 
-/// Return all hexes within `radius` steps of `center` (inclusive).
-///
-/// The result contains exactly `1 + 3 * radius * (radius + 1)` hexes.
-/// Deprecated: Use `center.range(radius)` instead.
-#[deprecated(note = "Use method syntax: center.range(radius)")]
-pub fn range(center: HexCoord, radius: u32) -> Vec<HexCoord> {
-    center.range(radius)
-}
-
 /// Return the straight (lerp) line from `a` to `b`, inclusive of both
 /// endpoints, with `a.distance(b) + 1` hexes.
 pub fn line(a: HexCoord, b: HexCoord) -> Vec<HexCoord> {
@@ -331,12 +310,6 @@ pub fn line(a: HexCoord, b: HexCoord) -> Vec<HexCoord> {
         result.push(from_cube(rx, ry, rz));
     }
     result
-}
-
-/// Deprecated: Use `h.in_map(radius)` instead.
-#[deprecated(note = "Use method syntax: h.in_map(radius)")]
-pub fn in_map(h: HexCoord, radius: u32) -> bool {
-    h.in_map(radius)
 }
 
 /// A priority-queue item that orders by ascending `f` (g + heuristic), then by
@@ -385,7 +358,7 @@ impl Ord for PqItem {
 ///
 /// `passable` decides whether a hex may be entered; `cost(from, to)` returns
 /// the (non-negative) movement cost of stepping from `from` to `to`. The
-/// heuristic is the admissible [`distance`] to `goal`.
+/// heuristic is the admissible [`HexCoord::distance`] to `goal`.
 ///
 /// Returns the path **excluding** `start` but **including** `goal`, or `None`
 /// if `goal` is unreachable. The result is deterministic for identical inputs.
@@ -465,25 +438,6 @@ pub fn astar(
     }
 
     None
-}
-
-/// Threat-weighted single-source shortest path (Dijkstra) from `start`.
-///
-/// The edge weight into `to` from any neighbor is `base_cost *
-/// (1.0 + threat_fn(to))`, which is non-negative when `threat_fn >= -1.0`.
-/// There is no heuristic, so this is plain uniform-cost search.
-///
-/// Returns `(inclusive path from start to goal, accumulated total cost)` or
-/// `None` if `goal` is unreachable. Deterministic for identical inputs.
-/// Deprecated: Use `start.safe_route(goal, threat_fn, base_cost)` instead.
-#[deprecated(note = "Use method syntax: start.safe_route(goal, threat_fn, base_cost)")]
-pub fn safe_route(
-    start: HexCoord,
-    goal: HexCoord,
-    threat_fn: impl Fn(HexCoord) -> f32,
-    base_cost: f32,
-) -> Option<(Vec<HexCoord>, f32)> {
-    start.safe_route(goal, threat_fn, base_cost)
 }
 
 #[cfg(test)]
