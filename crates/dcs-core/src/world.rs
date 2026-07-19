@@ -4,7 +4,7 @@
 //! This module is **pure** — no render dependencies. All randomness flows
 //! through `state.rng`; all mutations go through `GameState`.
 
-use crate::hex::range;
+
 use crate::model::{
     BUILD_COST, FORTRESS_TRAIN_DISCOUNT, GRANARY_WATER_BONUS, GROWTH_PERIOD_TURNS,
     GROWTH_WATER_THRESHOLD, POP_FOR_SPECIALIZE, SPECIALIZE_COST_INFLUENCE, TERRAIN,
@@ -60,7 +60,7 @@ pub fn worked_tiles(state: &GameState, city_id: CityId) -> Vec<TileId> {
     let c = &state.cities[city_id.0 as usize];
     let coord = state.tiles[c.tile.0 as usize].coord;
     let mut tiles = vec![c.tile];
-    for hex in range(coord, 1) {
+    for hex in coord.range(1) {
         if let Some(&tid) = state.tile_index.get(&hex) {
             tiles.push(tid);
         }
@@ -443,7 +443,7 @@ pub fn zone_of_control(state: &GameState, player: PlayerId) -> FxHashSet<TileId>
         if city.owner == player && city.specialization == Some(CitySpecialization::Fortress) {
             let coord = state.tiles[city.tile.0 as usize].coord;
             zoc.insert(city.tile);
-            for hex in range(coord, 1) {
+            for hex in coord.range(1) {
                 if let Some(&tid) = state.tile_index.get(&hex) {
                     zoc.insert(tid);
                 }
@@ -700,7 +700,7 @@ mod tests {
         s.cities[0].buildings.push(BuildingKind::Well);
         // Set one ring tile to Oasis for extra water.
         let city_coord = s.tiles[s.cities[0].tile.0 as usize].coord;
-        for hex in crate::hex::range(city_coord, 1) {
+        for hex in city_coord.range(1) {
             if let Some(&tid) = s.tile_index.get(&hex) {
                 s.tiles[tid.0 as usize].terrain = TerrainType::Oasis;
                 break; // just one extra oasis

@@ -700,7 +700,7 @@ mod tests {
         // Need > GROWTH_WATER_THRESHOLD (5) to grow.
         // Add more oases in the ring.
         let city_coord = s.tiles[s.cities[0].tile.0 as usize].coord;
-        for hex in crate::hex::range(city_coord, 1) {
+        for hex in city_coord.range(1) {
             if let Some(&tid) = s.tile_index.get(&hex) {
                 s.tiles[tid.0 as usize].terrain = TerrainType::Oasis;
                 break; // one more oasis in the ring

@@ -24,7 +24,7 @@
 //! `step` / `resolve_one` are pure functions of `(state, command-stream)`:
 //! identical seed + identical commands ⇒ identical resulting state + events.
 
-use crate::hex::{astar, in_map};
+use crate::hex::astar;
 use crate::model::{
     FOUND_CITY_INFLUENCE, POP_FOR_SPECIALIZE, SPECIALIZE_COST_INFLUENCE, UNIT_TRAIN_COST, unit_def,
 };
@@ -484,7 +484,7 @@ fn resolve_move(
     let radius = state.scenario.map_radius as u32;
 
     // Passable = any in-map tile (Phase 1 keeps all in-map tiles passable).
-    let path = astar(from_coord, to_coord, |h| in_map(h, radius), |_, _| 1.0_f32);
+    let path = astar(from_coord, to_coord, |h| h.in_map(radius), |_, _| 1.0_f32);
 
     let path = match path {
         Some(p) => p,
@@ -733,9 +733,10 @@ mod tests {
             test_harness::create_unit(&mut s, pid, UnitKind::Scout, oasis_tile);
 
             // Guard on an in-map neighbor
-            let neighbor = crate::hex::neighbors(oasis)
+            let neighbor = oasis
+                .neighbors()
                 .into_iter()
-                .find(|n| crate::hex::in_map(*n, radius))
+                .find(|n| n.in_map(radius))
                 .unwrap_or(oasis);
             let guard_tile = s.tile_index[&neighbor];
             test_harness::create_unit(&mut s, pid, UnitKind::CaravanGuard, guard_tile);

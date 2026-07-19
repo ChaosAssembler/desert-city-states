@@ -18,7 +18,7 @@
 //! | City = Scholar Outpost | +1 (→3) |
 //! | Watchtower building | 2 around the tower tile |
 
-use crate::hex::range;
+
 use crate::model::GameState;
 use crate::{
     BuildingKind, CityId, CitySpecialization, GameEvent, PlayerId, RouteId, TileId, UnitId,
@@ -83,7 +83,7 @@ pub fn city_sight(state: &GameState, city: CityId) -> u32 {
 pub fn reveal(state: &mut GameState, player: PlayerId, center: TileId, r: u32) -> Vec<TileId> {
     let center_coord = state.tiles[center.0 as usize].coord;
     let mut newly: Vec<TileId> = Vec::new();
-    for hex in range(center_coord, r) {
+    for hex in center_coord.range(r) {
         if let Some(&tid) = state.tile_index.get(&hex) {
             if state.players[player.0 as usize].discovered.insert(tid) {
                 newly.push(tid);
@@ -142,7 +142,7 @@ pub fn is_city_visible(state: &GameState, viewer: PlayerId, city_id: CityId) -> 
     }
     // Check worked ring (city tile + ring(1)).
     let city_coord = state.tiles[c.tile.0 as usize].coord;
-    for hex in range(city_coord, 1) {
+    for hex in city_coord.range(1) {
         if let Some(&tid) = state.tile_index.get(&hex) {
             if is_tile_visible(state, viewer, tid) {
                 return true;
@@ -382,7 +382,7 @@ mod tests {
         let mut s = make_game();
         // No routes exist, but let's add one for testing.
         let origin_tile = s.tile_index[&crate::hex::ORIGIN];
-        let neighbor = crate::hex::neighbors(crate::hex::ORIGIN)[0];
+        let neighbor = crate::hex::ORIGIN.neighbors()[0];
         let neighbor_tile = s.tile_index[&neighbor];
         let route_id = RouteId(0);
         s.routes.push(crate::model::CaravanRoute {

@@ -300,7 +300,7 @@ fn assess(state: &GameState, player: PlayerId) -> Situation {
     let player_discovered = &state.players[player.0 as usize].discovered;
     for &tid in player_discovered.iter() {
         let coord = state.tiles[tid.0 as usize].coord;
-        for neighbor in crate::hex::neighbors(coord) {
+        for neighbor in coord.neighbors() {
             if let Some(&nid) = state.tile_index.get(&neighbor) {
                 if !player_discovered.contains(&nid) {
                     sit.fog_frontier.push(tid);
@@ -391,8 +391,8 @@ fn candidates_expand(state: &GameState, player: PlayerId, sit: &Situation) -> Ve
     }
 
     // Look for oases reachable by the scout (adjacent to scout position).
-    for neighbor_coord in crate::hex::neighbors(scout_coord) {
-        if !crate::hex::in_map(neighbor_coord, radius) {
+        for neighbor_coord in scout_coord.neighbors() {
+        if !neighbor_coord.in_map(radius) {
             continue;
         }
         if let Some(&tile_id) = state.tile_index.get(&neighbor_coord) {
@@ -419,7 +419,7 @@ fn candidates_expand(state: &GameState, player: PlayerId, sit: &Situation) -> Ve
                 .map(|&cid| {
                     let city_tile = state.cities[cid.0 as usize].tile;
                     let city_coord = state.tiles[city_tile.0 as usize].coord;
-                    crate::hex::distance(neighbor_coord, city_coord) as f32
+                    neighbor_coord.distance(city_coord) as f32
                 })
                 .fold(f32::INFINITY, f32::min);
 
@@ -638,7 +638,7 @@ fn candidates_defend(state: &GameState, _player: PlayerId, sit: &Situation) -> V
                     let tile_coord = state.tiles[tid.0 as usize].coord;
 
                     // If already adjacent or on the tile, just patrol.
-                    if crate::hex::distance(guard_coord, tile_coord) <= 1 {
+                    if guard_coord.distance(tile_coord) <= 1 {
                         candidates.push(ScoredAction {
                             score: 3.0,
                             cmd: Command::Patrol {
@@ -710,7 +710,7 @@ fn candidates_raid(
                     let raider_coord = state.tiles[raider.tile.0 as usize].coord;
                     let tile_coord = state.tiles[tid.0 as usize].coord;
 
-                    if crate::hex::distance(raider_coord, tile_coord) <= 1 {
+                    if raider_coord.distance(tile_coord) <= 1 {
                         candidates.push(ScoredAction {
                             score: params.raid_weight * 3.0,
                             cmd: Command::RaidRoute {
@@ -734,7 +734,7 @@ fn candidates_raid(
             let raider_coord = state.tiles[raider.tile.0 as usize].coord;
             let city_coord = state.tiles[city.tile.0 as usize].coord;
 
-            if crate::hex::distance(raider_coord, city_coord) <= 1 {
+            if raider_coord.distance(city_coord) <= 1 {
                 candidates.push(ScoredAction {
                     score: params.raid_weight * 2.0,
                     cmd: Command::RaidCity {
@@ -777,7 +777,7 @@ fn candidates_scout(state: &GameState, _player: PlayerId, sit: &Situation) -> Ve
         for &fid in sit.fog_frontier.iter().take(20) {
             // Limit search for performance.
             let f_coord = state.tiles[fid.0 as usize].coord;
-            let dist = crate::hex::distance(unit_coord, f_coord);
+            let dist = unit_coord.distance(f_coord);
             if dist < best_dist {
                 best_dist = dist;
                 best_tile = Some(fid);

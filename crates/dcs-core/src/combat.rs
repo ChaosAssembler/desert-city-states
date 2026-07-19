@@ -3,7 +3,7 @@
 //! All randomness flows through `state.rng` (ADR-0006). Emits
 //! `GameEvent::Combat` / `RouteRaided` / `CityRaided`.
 
-use crate::hex::neighbors;
+
 use crate::model::{GameState, TerrainType, terrain_def, unit_def};
 use crate::{
     CityId, CitySpecialization, GameEvent, PlayerId, RouteId, RouteStatus, TileId, UnitAbility,
@@ -243,7 +243,7 @@ fn find_controlling_guard(
 
         // Units ADJACENT to this tile.
         let path_coord = state.tiles[path_tile.0 as usize].coord;
-        for n in neighbors(path_coord) {
+        for n in path_coord.neighbors() {
             if let Some(&adj_tile) = state.tile_index.get(&n) {
                 for u in &state.units {
                     if u.owner == route_owner

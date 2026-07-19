@@ -16,7 +16,7 @@
 //! - Spec: `docs/specs/gameplay-caravan-routes.md`
 //! - Architecture: `docs/architecture/ARCHITECTURE.md` §4.3, §5, §15
 
-use crate::hex::{self, HexCoord};
+use crate::hex::HexCoord;
 use crate::model::{GameState, TERRAIN};
 use crate::{
     BuildingKind, CaravanRoute, CityId, CitySpecialization, Command, GameEvent, PlayerId,
@@ -115,7 +115,7 @@ pub fn compute_route(state: &GameState, from: TileId, to: TileId, actor: PlayerI
         }
     };
 
-    let result = hex::safe_route(from_coord, to_coord, threat_fn, 1.0);
+    let result = from_coord.safe_route(to_coord, threat_fn, 1.0);
 
     match result {
         Some((coords, _total_cost)) => {
@@ -188,7 +188,7 @@ pub fn is_tile_controlled_by(state: &GameState, player: PlayerId, tile: TileId) 
             && unit.ability == UnitAbility::Patrolling
         {
             let unit_coord = state.tiles[unit.tile.0 as usize].coord;
-            if hex::distance(tile_coord, unit_coord) <= 1 {
+            if tile_coord.distance(unit_coord) <= 1 {
                 return true;
             }
         }
@@ -555,7 +555,7 @@ fn has_enemy_adjacent_to_exposed(state: &GameState, owner: PlayerId, path: &[Til
             for unit in &state.units {
                 if unit.owner != owner {
                     let unit_coord = state.tiles[unit.tile.0 as usize].coord;
-                    if hex::distance(tile_coord, unit_coord) <= 1 {
+                    if tile_coord.distance(unit_coord) <= 1 {
                         return true;
                     }
                 }
@@ -577,7 +577,7 @@ fn has_guard_controlling_exposed(state: &GameState, owner: PlayerId, path: &[Til
                     && unit.ability == UnitAbility::Patrolling
                 {
                     let unit_coord = state.tiles[unit.tile.0 as usize].coord;
-                    if hex::distance(tile_coord, unit_coord) <= 1 {
+                    if tile_coord.distance(unit_coord) <= 1 {
                         return true;
                     }
                 }
@@ -848,8 +848,8 @@ mod tests {
             .tiles
             .iter()
             .find(|t| {
-                crate::hex::distance(t.coord, s.tiles[s.cities[0].tile.0 as usize].coord) > 2
-                    && crate::hex::distance(t.coord, s.tiles[s.cities[1].tile.0 as usize].coord) > 2
+                t.coord.distance(s.tiles[s.cities[0].tile.0 as usize].coord) > 2
+                    && t.coord.distance(s.tiles[s.cities[1].tile.0 as usize].coord) > 2
             })
             .map(|t| t.id);
         if let Some(tid) = far_tile {

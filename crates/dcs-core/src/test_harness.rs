@@ -4,7 +4,7 @@
 //! all test modules to reduce duplication.
 
 #[cfg(test)]
-use crate::hex::{HexCoord, ORIGIN, in_map, neighbors, range};
+use crate::hex::{HexCoord, ORIGIN};
 #[cfg(test)]
 use crate::model::*;
 #[cfg(test)]
@@ -20,7 +20,7 @@ use std::collections::VecDeque;
 /// Marks origin as Oasis, and a second oasis at (2, -2) if in range.
 #[cfg(test)]
 pub fn allocate_hex_grid(state: &mut GameState, radius: u32) {
-    let coords = range(ORIGIN, radius);
+    let coords = ORIGIN.range(radius);
     for c in coords {
         let id = state.alloc_tile_id();
         state.tiles.push(Tile {
@@ -208,9 +208,9 @@ pub fn unit_tile(state: &GameState, unit: UnitId) -> TileId {
 pub fn neighbor_tile_in_map(state: &GameState, tile: TileId) -> TileId {
     let coord = state.tiles[tile.0 as usize].coord;
     let radius = state.scenario.map_radius as u32;
-    let n = neighbors(coord)
+    let n = coord.neighbors()
         .into_iter()
-        .find(|h| in_map(*h, radius))
+        .find(|h| h.in_map(radius))
         .unwrap_or(coord);
     state.tile_index[&n]
 }
@@ -348,5 +348,11 @@ impl GameStateBuilder {
         }
 
         s
+    }
+}
+
+impl Default for GameStateBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }

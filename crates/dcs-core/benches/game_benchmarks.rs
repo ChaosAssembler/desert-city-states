@@ -9,7 +9,7 @@ fn setup_game_state() -> GameState {
     let cfg = mvp_preset();
     let mut state = GameState::new(cfg, 1);
     let radius = state.scenario.map_radius as u32;
-    for (i, coord) in hex::range(hex::ORIGIN, radius).into_iter().enumerate() {
+    for (i, coord) in hex::ORIGIN.range(radius).into_iter().enumerate() {
         let id = TileId(i as u32);
         state.tiles.push(Tile {
             id,
@@ -28,26 +28,26 @@ fn bench_hex_distance(c: &mut Criterion) {
     let start = HexCoord { q: 0, r: 0 };
     let goal = HexCoord { q: 5, r: -3 };
     c.bench_function("hex_distance_5_3", |b| {
-        b.iter(|| hex::distance(black_box(start), black_box(goal)))
+        b.iter(|| black_box(start).distance(black_box(goal)))
     });
 }
 
 fn bench_hex_neighbors(c: &mut Criterion) {
     let coord = HexCoord { q: 0, r: 0 };
     c.bench_function("hex_neighbors", |b| {
-        b.iter(|| hex::neighbors(black_box(coord)))
+        b.iter(|| black_box(coord).neighbors())
     });
 }
 
 fn bench_hex_range(c: &mut Criterion) {
     c.bench_function("hex_range_radius_5", |b| {
-        b.iter(|| hex::range(black_box(HexCoord { q: 0, r: 0 }), black_box(5)))
+        b.iter(|| black_box(HexCoord { q: 0, r: 0 }).range(black_box(5)))
     });
 }
 
 fn bench_game_state_creation(c: &mut Criterion) {
     c.bench_function("game_state_creation", |b| {
-        b.iter(|| setup_game_state())
+        b.iter(setup_game_state)
     });
 }
 

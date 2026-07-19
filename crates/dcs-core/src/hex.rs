@@ -35,6 +35,140 @@ pub struct HexCoord {
     pub r: i32,
 }
 
+impl std::fmt::Display for HexCoord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({},{})", self.q, self.r)
+    }
+}
+
+impl std::ops::Add<(i32, i32)> for HexCoord {
+    type Output = Self;
+    fn add(self, (dq, dr): (i32, i32)) -> Self {
+        HexCoord {
+            q: self.q + dq,
+            r: self.r + dr,
+        }
+    }
+}
+
+impl std::ops::AddAssign<(i32, i32)> for HexCoord {
+    fn add_assign(&mut self, (dq, dr): (i32, i32)) {
+        self.q += dq;
+        self.r += dr;
+    }
+}
+
+impl From<(i32, i32)> for HexCoord {
+    fn from((q, r): (i32, i32)) -> Self {
+        HexCoord { q, r }
+    }
+}
+
+impl HexCoord {
+    /// Returns the hex distance between this coordinate and another.
+    pub fn distance(self, other: HexCoord) -> u32 {
+        let a = to_cube(self);
+        let b = to_cube(other);
+        ((a.0 - b.0).unsigned_abs() + (a.1 - b.1).unsigned_abs() + (a.2 - b.2).unsigned_abs()) / 2
+    }
+
+    /// Returns the six neighboring hex coordinates.
+    pub fn neighbors(self) -> [HexCoord; 6] {
+        AXIAL_DIRS.map(|(dq, dr)| HexCoord {
+            q: self.q + dq,
+            r: self.r + dr,
+        })
+    }
+
+    /// Returns all hex coordinates within `radius` steps of this coordinate.
+    pub fn range(self, radius: u32) -> Vec<HexCoord> {
+        let r = radius as i32;
+        let mut results = Vec::with_capacity((1 + 3 * r * (r + 1)) as usize);
+        for dq in -r..=r {
+            for dr in (-r).max(-dq - r)..=r.min(-dq + r) {
+                results.push(HexCoord {
+                    q: self.q + dq,
+                    r: self.r + dr,
+                });
+            }
+        }
+        results
+    }
+
+    /// Returns true if this coordinate is within the hex map of given radius.
+    pub fn in_map(self, radius: u32) -> bool {
+        let r = radius as i32;
+        self.q.abs() <= r && self.r.abs() <= r && (self.q + self.r).abs() <= r
+    }
+
+    /// Finds a safe route from this coordinate to the goal, avoiding threats.
+    pub fn safe_route(
+        self,
+        goal: HexCoord,
+        threat_fn: impl Fn(HexCoord) -> f32,
+        base_cost: f32,
+    ) -> Option<(Vec<HexCoord>, f32)> {
+        if self == goal {
+            return Some((vec![self], 0.0));
+        }
+
+        let mut open = BinaryHeap::new();
+        open.push(PqItem {
+            f: 0.0,
+            g: 0.0,
+            coord: self,
+        });
+
+        let mut dist: fxhash::FxHashMap<HexCoord, f32> = fxhash::FxHashMap::default();
+        dist.insert(self, 0.0);
+
+        let mut came_from: fxhash::FxHashMap<HexCoord, HexCoord> = fxhash::FxHashMap::default();
+
+        while let Some(item) = open.pop() {
+            let current = item.coord;
+            let current_d = item.f; // f == g in Dijkstra (no heuristic)
+
+            // Skip stale queue entries.
+            if let Some(&best) = dist.get(&current) {
+                if current_d > best {
+                    continue;
+                }
+            }
+
+            if current == goal {
+                let mut path = vec![current];
+                let mut step = current;
+                while step != self {
+                    step = came_from[&step];
+                    path.push(step);
+                }
+                path.reverse();
+                return Some((path, current_d));
+            }
+
+            for next in current.neighbors() {
+                let w = base_cost * (1.0 + threat_fn(next));
+                let nd = current_d + w;
+                let better = match dist.get(&next) {
+                    Some(&d) => nd < d,
+                    None => true,
+                };
+                if better {
+                    came_from.insert(next, current);
+                    dist.insert(next, nd);
+                    open.push(PqItem {
+                        f: nd,
+                        g: nd,
+                        coord: next,
+                    });
+                }
+            }
+        }
+
+        None
+    }
+}
+
 /// Pixel layout parameters for converting between hex and screen space.
 ///
 /// `size` is the hex "radius" (center to corner) in pixels; `origin` is the
@@ -129,41 +263,16 @@ pub fn cube_round(x: f32, y: f32, z: f32) -> (i32, i32, i32) {
     (rx as i32, ry as i32, rz as i32)
 }
 
-/// Return the six axial neighbors of `h`, in the fixed [`AXIAL_DIRS`] order.
+/// Deprecated: Use `h.neighbors()` instead.
+#[deprecated(note = "Use method syntax: h.neighbors()")]
 pub fn neighbors(h: HexCoord) -> [HexCoord; 6] {
-    [
-        HexCoord {
-            q: h.q + AXIAL_DIRS[0].0,
-            r: h.r + AXIAL_DIRS[0].1,
-        },
-        HexCoord {
-            q: h.q + AXIAL_DIRS[1].0,
-            r: h.r + AXIAL_DIRS[1].1,
-        },
-        HexCoord {
-            q: h.q + AXIAL_DIRS[2].0,
-            r: h.r + AXIAL_DIRS[2].1,
-        },
-        HexCoord {
-            q: h.q + AXIAL_DIRS[3].0,
-            r: h.r + AXIAL_DIRS[3].1,
-        },
-        HexCoord {
-            q: h.q + AXIAL_DIRS[4].0,
-            r: h.r + AXIAL_DIRS[4].1,
-        },
-        HexCoord {
-            q: h.q + AXIAL_DIRS[5].0,
-            r: h.r + AXIAL_DIRS[5].1,
-        },
-    ]
+    h.neighbors()
 }
 
-/// Cube distance between two axial coordinates: `(|dx| + |dy| + |dz|) / 2`.
+/// Deprecated: Use `a.distance(b)` instead.
+#[deprecated(note = "Use method syntax: a.distance(b)")]
 pub fn distance(a: HexCoord, b: HexCoord) -> u32 {
-    let ac = to_cube(a);
-    let bc = to_cube(b);
-    ((ac.0 - bc.0).abs() + (ac.1 - bc.1).abs() + (ac.2 - bc.2).abs()) as u32 / 2
+    a.distance(b)
 }
 
 /// Return the ring of hexes at exactly `radius` steps from `center`.
@@ -200,26 +309,16 @@ pub fn ring(center: HexCoord, radius: u32) -> Vec<HexCoord> {
 /// Return all hexes within `radius` steps of `center` (inclusive).
 ///
 /// The result contains exactly `1 + 3 * radius * (radius + 1)` hexes.
+/// Deprecated: Use `center.range(radius)` instead.
+#[deprecated(note = "Use method syntax: center.range(radius)")]
 pub fn range(center: HexCoord, radius: u32) -> Vec<HexCoord> {
-    let radius = radius as i32;
-    let mut result = Vec::with_capacity((1 + 3 * radius * (radius + 1)) as usize);
-    for dq in -radius..=radius {
-        let dr_min = (-radius).max(-dq - radius);
-        let dr_max = radius.min(-dq + radius);
-        for dr in dr_min..=dr_max {
-            result.push(HexCoord {
-                q: center.q + dq,
-                r: center.r + dr,
-            });
-        }
-    }
-    result
+    center.range(radius)
 }
 
 /// Return the straight (lerp) line from `a` to `b`, inclusive of both
-/// endpoints, with `distance(a, b) + 1` hexes.
+/// endpoints, with `a.distance(b) + 1` hexes.
 pub fn line(a: HexCoord, b: HexCoord) -> Vec<HexCoord> {
-    let n = distance(a, b);
+    let n = a.distance(b);
     let ac = to_cube(a);
     let bc = to_cube(b);
     let mut result = Vec::with_capacity((n + 1) as usize);
@@ -234,9 +333,10 @@ pub fn line(a: HexCoord, b: HexCoord) -> Vec<HexCoord> {
     result
 }
 
-/// Whether `h` lies within `radius` steps of the origin.
+/// Deprecated: Use `h.in_map(radius)` instead.
+#[deprecated(note = "Use method syntax: h.in_map(radius)")]
 pub fn in_map(h: HexCoord, radius: u32) -> bool {
-    distance(ORIGIN, h) <= radius
+    h.in_map(radius)
 }
 
 /// A priority-queue item that orders by ascending `f` (g + heuristic), then by
@@ -304,7 +404,7 @@ pub fn astar(
 
     let mut open = BinaryHeap::new();
     open.push(PqItem {
-        f: distance(start, goal) as f32,
+        f: start.distance(goal) as f32,
         g: 0.0,
         coord: start,
     });
@@ -342,7 +442,7 @@ pub fn astar(
         }
 
         let current_g = best_g;
-        for next in neighbors(current) {
+        for next in current.neighbors() {
             if !passable(next) {
                 continue;
             }
@@ -354,7 +454,7 @@ pub fn astar(
             if better {
                 came_from.insert(next, current);
                 g_score.insert(next, tentative_g);
-                let f = tentative_g + distance(next, goal) as f32;
+                let f = tentative_g + next.distance(goal) as f32;
                 open.push(PqItem {
                     f,
                     g: tentative_g,
@@ -375,70 +475,15 @@ pub fn astar(
 ///
 /// Returns `(inclusive path from start to goal, accumulated total cost)` or
 /// `None` if `goal` is unreachable. Deterministic for identical inputs.
+/// Deprecated: Use `start.safe_route(goal, threat_fn, base_cost)` instead.
+#[deprecated(note = "Use method syntax: start.safe_route(goal, threat_fn, base_cost)")]
 pub fn safe_route(
     start: HexCoord,
     goal: HexCoord,
     threat_fn: impl Fn(HexCoord) -> f32,
     base_cost: f32,
 ) -> Option<(Vec<HexCoord>, f32)> {
-    if start == goal {
-        return Some((vec![start], 0.0));
-    }
-
-    let mut open = BinaryHeap::new();
-    open.push(PqItem {
-        f: 0.0,
-        g: 0.0,
-        coord: start,
-    });
-
-    let mut dist: fxhash::FxHashMap<HexCoord, f32> = fxhash::FxHashMap::default();
-    dist.insert(start, 0.0);
-
-    let mut came_from: fxhash::FxHashMap<HexCoord, HexCoord> = fxhash::FxHashMap::default();
-
-    while let Some(item) = open.pop() {
-        let current = item.coord;
-        let current_d = item.f; // f == g in Dijkstra (no heuristic)
-
-        // Skip stale queue entries.
-        if let Some(&best) = dist.get(&current) {
-            if current_d > best {
-                continue;
-            }
-        }
-
-        if current == goal {
-            let mut path = vec![current];
-            let mut step = current;
-            while step != start {
-                step = came_from[&step];
-                path.push(step);
-            }
-            path.reverse();
-            return Some((path, current_d));
-        }
-
-        for next in neighbors(current) {
-            let w = base_cost * (1.0 + threat_fn(next));
-            let nd = current_d + w;
-            let better = match dist.get(&next) {
-                Some(&d) => nd < d,
-                None => true,
-            };
-            if better {
-                came_from.insert(next, current);
-                dist.insert(next, nd);
-                open.push(PqItem {
-                    f: nd,
-                    g: nd,
-                    coord: next,
-                });
-            }
-        }
-    }
-
-    None
+    start.safe_route(goal, threat_fn, base_cost)
 }
 
 #[cfg(test)]
@@ -507,11 +552,11 @@ mod tests {
     #[test]
     fn distance_symmetric_and_expected() {
         let origin = HexCoord { q: 0, r: 0 };
-        assert_eq!(distance(origin, HexCoord { q: 2, r: 0 }), 2);
-        assert_eq!(distance(origin, HexCoord { q: 0, r: -3 }), 3);
-        assert_eq!(distance(origin, HexCoord { q: 2, r: -4 }), 4);
+        assert_eq!(origin.distance(HexCoord { q: 2, r: 0 }), 2);
+        assert_eq!(origin.distance(HexCoord { q: 0, r: -3 }), 3);
+        assert_eq!(origin.distance(HexCoord { q: 2, r: -4 }), 4);
         assert_eq!(
-            distance(HexCoord { q: 1, r: 1 }, HexCoord { q: -2, r: 2 }),
+            HexCoord { q: 1, r: 1 }.distance(HexCoord { q: -2, r: 2 }),
             3
         );
 
@@ -522,7 +567,7 @@ mod tests {
                 for q2 in -4..=4i32 {
                     for r2 in -4..=4i32 {
                         let b = HexCoord { q: q2, r: r2 };
-                        assert_eq!(distance(a, b), distance(b, a));
+                        assert_eq!(a.distance(b), b.distance(a));
                     }
                 }
             }
@@ -538,7 +583,7 @@ mod tests {
             let r = ring(center, radius);
             assert_eq!(r.len(), 6 * radius as usize, "bad len at radius {radius}");
             for h in r {
-                assert_eq!(distance(center, h), radius);
+                assert_eq!(center.distance(h), radius);
             }
         }
     }
@@ -546,15 +591,15 @@ mod tests {
     #[test]
     fn range_counts_and_inclusive() {
         let center = HexCoord { q: -1, r: 2 };
-        assert_eq!(range(center, 0).len(), 1);
-        assert_eq!(range(center, 4).len(), 61);
+        assert_eq!(center.range(0).len(), 1);
+        assert_eq!(center.range(4).len(), 61);
         for radius in 0..=5u32 {
             let expected = 1 + 3 * radius * (radius + 1);
-            assert_eq!(range(center, radius).len(), expected as usize);
+            assert_eq!(center.range(radius).len(), expected as usize);
         }
         // Every hex in range is within radius of center.
-        for h in range(center, 5) {
-            assert!(distance(center, h) <= 5);
+        for h in center.range(5) {
+            assert!(center.distance(h) <= 5);
         }
     }
 
@@ -567,7 +612,7 @@ mod tests {
         ];
         for (a, b) in cases {
             let l = line(a, b);
-            assert_eq!(l.len(), distance(a, b) as usize + 1);
+            assert_eq!(l.len(), a.distance(b) as usize + 1);
             assert_eq!(l.first(), Some(&a));
             assert_eq!(l.last(), Some(&b));
         }
@@ -578,16 +623,16 @@ mod tests {
         let radius = 3;
         // A hex exactly at the boundary is inside.
         let on_edge = HexCoord { q: 3, r: 0 };
-        assert!(in_map(on_edge, radius));
+        assert!(on_edge.in_map(radius));
         let outside = HexCoord { q: 4, r: 0 };
-        assert!(!in_map(outside, radius));
-        assert!(in_map(HexCoord { q: 0, r: 0 }, radius));
+        assert!(!outside.in_map(radius));
+        assert!(HexCoord { q: 0, r: 0 }.in_map(radius));
     }
 
     #[test]
     fn neighbors_are_six_and_distinct() {
         let h = HexCoord { q: 1, r: -2 };
-        let ns = neighbors(h);
+        let ns = h.neighbors();
         assert_eq!(ns.len(), 6);
         let mut sorted = ns;
         sorted.sort();
@@ -595,7 +640,7 @@ mod tests {
         // on fixed-size arrays anyway).
         assert_eq!(sorted.len(), 6, "neighbors were not distinct: {ns:?}");
         for n in ns {
-            assert_eq!(distance(h, n), 1);
+            assert_eq!(h.distance(n), 1);
         }
     }
 
@@ -631,13 +676,12 @@ mod tests {
 
     #[test]
     fn astar_returns_none_when_sealed() {
-        use crate::hex::distance;
         let start = HexCoord { q: 0, r: 0 };
         let goal = HexCoord { q: 4, r: 0 };
         // Seal q == 2 AND bound the explored region to a finite disk around the
         // start, so A* terminates. The q == 2 wall still makes the goal
         // unreachable, so the result must be None.
-        let passable = |h: HexCoord| h.q != 2 && distance(h, start) <= 5;
+        let passable = |h: HexCoord| h.q != 2 && h.distance(start) <= 5;
         let cost = |_: HexCoord, _: HexCoord| 1.0_f32;
         assert!(astar(start, goal, passable, cost).is_none());
     }
@@ -659,7 +703,7 @@ mod tests {
         let goal = HexCoord { q: 3, r: 0 };
         let threat = |_: HexCoord| 0.0_f32;
         let base_cost = 1.0;
-        let (path, total) = safe_route(start, goal, threat, base_cost).expect("path exists");
+        let (path, total) = start.safe_route(goal, threat, base_cost).expect("path exists");
         assert_eq!(path.first(), Some(&start));
         assert_eq!(path.last(), Some(&goal));
         // No threat: cost equals number of edges * base_cost.
@@ -676,8 +720,8 @@ mod tests {
         let no_threat = |_: HexCoord| 0.0_f32;
         let with_threat = |h: HexCoord| if h.q == 1 && h.r == 0 { 5.0 } else { 0.0 };
 
-        let (_, c0) = safe_route(start, goal, no_threat, base_cost).unwrap();
-        let (path, c1) = safe_route(start, goal, with_threat, base_cost).unwrap();
+        let (_, c0) = start.safe_route(goal, no_threat, base_cost).unwrap();
+        let (path, c1) = start.safe_route(goal, with_threat, base_cost).unwrap();
         assert!(c1 > c0, "threat should increase total cost");
         // The threatened tile must not appear as an intermediate step.
         for &h in &path[1..path.len().saturating_sub(0)] {
@@ -692,8 +736,8 @@ mod tests {
         let start = HexCoord { q: -2, r: 2 };
         let goal = HexCoord { q: 2, r: -2 };
         let threat = |h: HexCoord| ((h.q + h.r) as f32).abs() * 0.1;
-        let a = safe_route(start, goal, threat, 1.0).unwrap();
-        let b = safe_route(start, goal, threat, 1.0).unwrap();
+        let a = start.safe_route(goal, threat, 1.0).unwrap();
+        let b = start.safe_route(goal, threat, 1.0).unwrap();
         assert_eq!(a, b);
     }
 
@@ -707,7 +751,7 @@ mod tests {
         ) {
             let a = HexCoord { q: a_q, r: a_r };
             let b = HexCoord { q: b_q, r: b_r };
-            prop_assert_eq!(distance(a, b), distance(b, a));
+            prop_assert_eq!(a.distance(b), b.distance(a));
         }
 
         #[test]
@@ -716,7 +760,7 @@ mod tests {
             r in -10i32..10,
         ) {
             let coord = HexCoord { q, r };
-            prop_assert_eq!(distance(coord, coord), 0);
+            prop_assert_eq!(coord.distance(coord), 0);
         }
 
         #[test]

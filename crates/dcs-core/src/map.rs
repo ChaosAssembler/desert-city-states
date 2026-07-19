@@ -21,7 +21,7 @@
 
 use fxhash::FxHashSet;
 
-use crate::hex::{AXIAL_DIRS, HexCoord, ORIGIN, distance, in_map, neighbors, range};
+use crate::hex::{AXIAL_DIRS, HexCoord, ORIGIN};
 use crate::model::{
     FOUND_CITY_INFLUENCE, GameState, Player, PlayerColor, PlayerKind, Relic, Stockpiles,
     TerrainType, Tile, TurnPhase, Unit, UnitAbility, starting_wealth, unit_def,
@@ -58,8 +58,8 @@ pub fn new_game(scenario: &ScenarioConfig, seed: u64) -> GameState {
 fn generate_tiles(state: &mut GameState) {
     let radius = state.scenario.map_radius as u32;
     // Iterate deterministically: every in-map hex in a fixed scan order.
-    for coord in range(ORIGIN, radius) {
-        if !in_map(coord, radius) {
+    for coord in ORIGIN.range(radius) {
+        if !coord.in_map(radius) {
             continue;
         }
         let id = TileId(state.tiles.len() as u32);
@@ -94,7 +94,7 @@ fn place_oases(state: &mut GameState) {
     let mut candidates: Vec<TileId> = state
         .tiles
         .iter()
-        .filter(|t| t.terrain == TerrainType::Dunes && distance(t.coord, ORIGIN) < radius)
+        .filter(|t| t.terrain == TerrainType::Dunes && t.coord.distance(ORIGIN) < radius)
         .map(|t| t.id)
         .collect();
 
@@ -108,7 +108,7 @@ fn place_oases(state: &mut GameState) {
         let coord = tile_coord(state, cand);
         if oases
             .iter()
-            .any(|&o| distance(coord, tile_coord(state, o)) < 2)
+            .any(|&o| coord.distance(tile_coord(state, o)) < 2)
         {
             continue;
         }
@@ -123,7 +123,7 @@ fn place_oases(state: &mut GameState) {
         let coord = tile_coord(state, cand);
         if oases
             .iter()
-            .any(|&o| distance(coord, tile_coord(state, o)) < 1)
+            .any(|&o| coord.distance(tile_coord(state, o)) < 1)
         {
             continue;
         }
@@ -173,7 +173,7 @@ fn carve_line(state: &mut GameState, radius: u32, terrain: TerrainType) {
             q: start_coord.q + dir.0 * step as i32,
             r: start_coord.r + dir.1 * step as i32,
         };
-        if !in_map(next, radius) {
+        if !next.in_map(radius) {
             break;
         }
         if let Some(&tile) = state.tile_index.get(&next) {
@@ -244,7 +244,7 @@ fn place_players(state: &mut GameState) -> Vec<TileId> {
         let coord = tile_coord(state, cand);
         if chosen
             .iter()
-            .any(|&c| distance(coord, tile_coord(state, c)) < 4)
+            .any(|&c| coord.distance(tile_coord(state, c)) < 4)
         {
             continue;
         }
@@ -280,7 +280,7 @@ fn place_players(state: &mut GameState) -> Vec<TileId> {
         let spacing_ok = chosen.iter().all(|&a| {
             chosen
                 .iter()
-                .all(|&b| a == b || distance(tile_coord(state, a), tile_coord(state, b)) >= 4)
+                .all(|&b| a == b || tile_coord(state, a).distance(tile_coord(state, b)) >= 4)
         });
         if !spacing_ok {
             state.log.push(GameEvent::Warn {
@@ -371,9 +371,10 @@ fn choose_unit_tile(state: &mut GameState, preferred: TileId) -> TileId {
     }
     let coord = tile_coord(state, preferred);
     // Gather adjacent in-map tiles that are Dunes (neutral) and free.
-    let options: Vec<TileId> = neighbors(coord)
+    let options: Vec<TileId> = coord
+        .neighbors()
         .iter()
-        .filter(|&&n| in_map(n, state.scenario.map_radius as u32))
+        .filter(|&&n| n.in_map(state.scenario.map_radius as u32))
         .filter_map(|&n| state.tile_index.get(&n).copied())
         .filter(|&t| state.tiles[t.0 as usize].terrain == TerrainType::Dunes)
         .filter(|&t| !state.units.iter().any(|u| u.tile == t))
@@ -398,7 +399,7 @@ fn reveal_start_fog(state: &mut GameState, start_oases: &[TileId]) {
         }
         let coord = tile_coord(state, start_tile);
         let mut revealed = FxHashSet::default();
-        for c in range(coord, sight) {
+        for c in coord.range(sight) {
             if let Some(&tid) = state.tile_index.get(&c) {
                 revealed.insert(tid);
             }
@@ -571,7 +572,7 @@ mod tests {
         let radius = state.scenario.map_radius as u32;
         for t in &state.tiles {
             assert!(
-                in_map(t.coord, radius),
+                t.coord.in_map(radius),
                 "tile {:?} outside map radius {}",
                 t.coord,
                 radius
@@ -593,7 +594,7 @@ mod tests {
         let oases = oasis_tiles(&state);
         for i in 0..oases.len() {
             for j in (i + 1)..oases.len() {
-                let d = distance(tile_coord(&state, oases[i]), tile_coord(&state, oases[j]));
+                let d = tile_coord(&state, oases[i]).distance(tile_coord(&state, oases[j]));
                 assert!(d >= 2, "two oases are closer than 2 apart (distance {d})");
             }
         }
