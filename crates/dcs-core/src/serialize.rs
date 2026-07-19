@@ -170,6 +170,9 @@ fn migrate(_from: u32, _state: GameState) -> Result<GameState, SaveError> {
 mod tests {
     use super::*;
     use crate::scenario::mvp_preset;
+    use crate::{Command, GameEvent, PlayerId, RejectReason};
+    use insta::assert_debug_snapshot;
+    use insta::assert_json_snapshot;
 
     /// Build a small but non-trivial `GameState` to exercise the (de)serialize
     /// paths, including the fxhash serde helpers and the `SeededRng`.
@@ -318,5 +321,31 @@ mod tests {
         let original = serialize(&s, SaveFormat::Json).expect("serialize");
         assert_eq!(original, reencoded);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn snapshot_game_state_json() {
+        let state = sample_state();
+        assert_json_snapshot!(state);
+    }
+
+    #[test]
+    fn snapshot_game_event_rejected() {
+        let event = GameEvent::Rejected {
+            command: Command::EndTurn,
+            reason: RejectReason::NotYourTurn,
+        };
+        assert_debug_snapshot!(event);
+    }
+
+    #[test]
+    fn snapshot_game_event_income() {
+        let event = GameEvent::Income {
+            player: PlayerId(0),
+            water: 5,
+            wealth: 10,
+            influence: 2,
+        };
+        assert_debug_snapshot!(event);
     }
 }

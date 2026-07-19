@@ -444,6 +444,7 @@ pub fn safe_route(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn cube_round_sums_to_zero() {
@@ -694,5 +695,48 @@ mod tests {
         let a = safe_route(start, goal, threat, 1.0).unwrap();
         let b = safe_route(start, goal, threat, 1.0).unwrap();
         assert_eq!(a, b);
+    }
+
+    proptest! {
+        #[test]
+        fn prop_distance_symmetry(
+            a_q in -10i32..10,
+            a_r in -10i32..10,
+            b_q in -10i32..10,
+            b_r in -10i32..10,
+        ) {
+            let a = HexCoord { q: a_q, r: a_r };
+            let b = HexCoord { q: b_q, r: b_r };
+            prop_assert_eq!(distance(a, b), distance(b, a));
+        }
+
+        #[test]
+        fn prop_distance_zero_iff_equal(
+            q in -10i32..10,
+            r in -10i32..10,
+        ) {
+            let coord = HexCoord { q, r };
+            prop_assert_eq!(distance(coord, coord), 0);
+        }
+
+        #[test]
+        fn prop_axial_cube_roundtrip(
+            q in -10i32..10,
+            r in -10i32..10,
+        ) {
+            let coord = HexCoord { q, r };
+            let (x, y, z) = to_cube(coord);
+            let back = from_cube(x, y, z);
+            prop_assert_eq!(coord, back);
+        }
+
+        #[test]
+        fn prop_cube_coordinates_sum_to_zero(
+            x in -10i32..10,
+            z in -10i32..10,
+        ) {
+            let y = -x - z;
+            prop_assert_eq!(x + y + z, 0);
+        }
     }
 }

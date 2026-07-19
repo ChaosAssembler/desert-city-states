@@ -1,0 +1,9 @@
+---
+source: crates/dcs-core/src/serialize.rs
+assertion_line: 338
+expression: event
+---
+Rejected {
+    command: EndTurn,
+    reason: NotYourTurn,
+}

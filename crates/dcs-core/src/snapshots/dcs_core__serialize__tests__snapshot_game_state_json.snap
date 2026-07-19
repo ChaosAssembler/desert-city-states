@@ -1,0 +1,70 @@
+---
+source: crates/dcs-core/src/serialize.rs
+assertion_line: 329
+expression: state
+---
+{
+  "version": 1,
+  "scenario": {
+    "map_radius": 4,
+    "player_count": 3,
+    "turn_limit": 30,
+    "ai_personalities": [
+      "Expansionist",
+      "Raider"
+    ],
+    "oasis_majority_pct": 50,
+    "wealth_score_target": 200,
+    "relic_count": 1,
+    "relic_hold_turns": 6,
+    "victories_enabled": [
+      "OasisDominance"
+    ],
+    "symmetry": false,
+    "seed": 0
+  },
+  "rng": {
+    "seed": 12345,
+    "counter": 1
+  },
+  "turn": 1,
+  "current_actor": 0,
+  "phase": "Order",
+  "tiles": [],
+  "tile_index": [
+    [
+      {
+        "q": 0,
+        "r": 0
+      },
+      0
+    ]
+  ],
+  "cities": [],
+  "units": [],
+  "routes": [],
+  "players": [],
+  "relics": [],
+  "victory": {
+    "oases_controlled": [
+      [
+        0,
+        3
+      ]
+    ],
+    "prestige_score": [
+      [
+        1,
+        12
+      ]
+    ],
+    "relic_timers": []
+  },
+  "log": [],
+  "next_tile_id": 0,
+  "next_city_id": 0,
+  "next_unit_id": 0,
+  "next_route_id": 0,
+  "next_player_id": 0,
+  "next_relic_id": 0
+}

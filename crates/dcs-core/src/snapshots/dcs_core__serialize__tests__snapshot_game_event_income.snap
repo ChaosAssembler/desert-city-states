@@ -1,0 +1,13 @@
+---
+source: crates/dcs-core/src/serialize.rs
+assertion_line: 349
+expression: event
+---
+Income {
+    player: PlayerId(
+        0,
+    ),
+    water: 5,
+    wealth: 10,
+    influence: 2,
+}
