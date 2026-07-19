@@ -8,6 +8,7 @@ permission:
   skill:
     review-reporting: allow
     subagent-autonomy: allow
+    rust-quality-conventions: allow
 ---
 
 # Code Reviewer
@@ -24,42 +25,11 @@ At session start, load `review-reporting` (structured issue table) and `subagent
 - Do not commit.
 
 ## Guidelines
-- Use the `review-reporting` structure (Checked / Issues Found / Summary) with `error`/`warning` severity.
-- Reference conventions as `ARCH §N.M` or relative file path.
-- Flag determinism violations (system entropy, nondeterministic iteration order) as errors.
 
-## Quality Checklist
-
-When reviewing code, check for these quality criteria:
-
-### Test Quality
-- **No duplicate test harness functions** — new tests must use `crate::test_harness` functions
-- **No `make_game()` in individual test modules** — use `minimal_state()`, `state_with_cities()`, or `GameStateBuilder`
-- **Integration tests** in `tests/`, not inline in source modules
-- **Mathematical functions** have property-based tests (proptest)
-- **Serialization changes** have snapshot tests (insta)
-
-### Code Quality
-- **No `Vec::remove(0)`** — should use `VecDeque::pop_front()`
-- **Consistent `FxHashSet`** — no `std::collections::HashSet`
-- **No unnecessary `.clone()`** — prefer borrows or moves
-- **Functions ≤50 lines** — flag larger functions for extraction
-- **No dead code** — no unused functions, constants, or imports
-
-### Documentation
-- **Public functions** have `# Arguments`, `# Returns`, `# Panics` sections
-- **Complex design decisions** are documented
-
-### Validation
-- **No duplicate validation** between `validate()` and `resolve_*`
-- **Shared validation helpers** are used
-
-### Error Handling
-- **No `PartialEq` on error types** unless specifically required
-- **`thiserror` for library errors**
-- **Events for runtime warnings**, `Result` for recoverable failures
-
-### Performance
-- **Performance-critical code** has benchmarks (criterion)
-- **No `Vec::remove(0)` in hot paths**
-- **`FxHashSet` for deterministic hashing**
+- Load `review-reporting` and `subagent-autonomy` at session start.
+- Read `docs/` and skills as needed.
+- Use the `review-reporting` structure: Checked / Issues Found / Summary.
+- Issues use `error` or `warning` severity.
+- Reference conventions as `ARCH §N.M`.
+- Flag determinism violations as errors.
+- Follow quality conventions defined in `rust-quality-conventions` skill.
