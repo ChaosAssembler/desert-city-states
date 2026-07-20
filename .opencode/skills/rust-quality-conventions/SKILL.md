@@ -21,6 +21,12 @@ Quality conventions for the Desert City-States Rust codebase. These rules apply 
 - **No unnecessary `.clone()`** — prefer borrows or moves
 - **Functions ≤50 lines** — extract helpers when larger
 
+## Architecture & Trait Design
+
+- **Prefer methods over free functions** — when a function's primary operand is a type you own, implement it as a method or associated function (`fn f(s: &GameState)` → `impl GameState { fn f(&self) }`). This improves discoverability via autocomplete and reduces import noise.
+- **Orphan-rule workaround: extension traits** — for foreign types you cannot `impl` directly (e.g. types owned by another crate), define a trait in this crate and implement it for the foreign type instead of leaving scattered free functions. Example: `trait UnitKindExt { fn def(self) -> &'static UnitDef; }` implemented for `dcs_protocol::UnitKind`, then called as `kind.def()`.
+- **Only implement traits with a real usage site** — avoid speculative `impl`s (e.g. `Sub`/`Neg` on a coordinate type, `Ord` on an enum used only for equality). Grep for actual call sites before adding a trait implementation or derive.
+
 ## Documentation
 
 - **Public functions** must have `# Arguments`, `# Returns`, `# Panics` sections
