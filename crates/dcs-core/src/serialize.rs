@@ -1,23 +1,16 @@
-//! Save / load serialization for [`GameState`].
+//! Save / load serialization for [`crate::GameState`].
 //!
-//! This module is the single home for (de)serializing the simulation state to
-//! and from the three supported wire formats (JSON, postcard, bincode) and for
-//! the versioned save envelope defined in `dcs-protocol`.
+//! This module defines the [`SaveFormat`] and [`SaveError`] types used by the
+//! serialization methods on [`crate::GameState`]. The actual implementations live on
+//! `GameState` itself (see [`crate::model::GameState`]).
 //!
 //! # Envelope strategy (ADR-0007)
 //!
-//! We serialize the [`VersionedSave<GameState>`] envelope rather than the raw
-//! [`GameState`]. The envelope carries the schema `version` that gates
+//! We serialize the [`crate::VersionedSave<crate::GameState>`] envelope rather than the raw
+//! [`crate::GameState`]. The envelope carries the schema `version` that gates
 //! migrations on load; `GameState` independently mirrors `SAVE_VERSION` for
 //! in-payload migration bookkeeping. The current `SAVE_VERSION` is `1`, so the
 //! migration loop is forward-proof but currently a no-op.
-
-use std::path::Path;
-
-use thiserror::Error;
-
-use crate::model::GameState;
-use crate::{SAVE_VERSION, VersionedSave};
 
 // ---------------------------------------------------------------------------
 // Formats
@@ -39,7 +32,7 @@ pub enum SaveFormat {
 // ---------------------------------------------------------------------------
 
 /// Errors that can occur while serializing, deserializing, or migrating a save.
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum SaveError {
     /// A save was produced by a newer engine than we can understand.
     #[error("unsupported save version {0} (current {1})")]
@@ -56,143 +49,22 @@ pub enum SaveError {
 }
 
 // ---------------------------------------------------------------------------
-// Core (de)serialization
-// ---------------------------------------------------------------------------
-
-/// Serialize a game state to bytes using the specified format.
-///
-/// The state is wrapped in a [`VersionedSave`] envelope carrying the current
-/// [`SAVE_VERSION`] before encoding, so every saved file is self-describing.
-///
-/// # Arguments
-/// * `state` - Game state to serialize
-/// * `fmt` - Output format (JSON, Postcard, or Bincode)
-///
-/// # Returns
-/// `Ok(Vec<u8>)` with the serialized bytes, or `Err(SaveError)` on failure.
-pub fn serialize(state: &GameState, fmt: SaveFormat) -> Result<Vec<u8>, SaveError> {
-    let env = VersionedSave {
-        version: SAVE_VERSION,
-        payload: state.clone(),
-    };
-    match fmt {
-        SaveFormat::Json => serde_json::to_vec(&env).map_err(|e| SaveError::Serde(e.to_string())),
-        SaveFormat::Postcard => {
-            postcard::to_stdvec(&env).map_err(|e| SaveError::Serde(e.to_string()))
-        }
-        SaveFormat::Bincode => {
-            bincode::serialize(&env).map_err(|e| SaveError::Serde(e.to_string()))
-        }
-    }
-}
-
-/// Deserialize a game state from bytes.
-///
-/// Decodes the [`VersionedSave`] envelope, rejects saves newer than our schema
-/// version, and runs the (currently empty) forward migration loop before
-/// returning the payload.
-///
-/// # Arguments
-/// * `bytes` - Serialized game state bytes
-/// * `fmt` - Format to use for deserialization
-///
-/// # Returns
-/// `Ok(GameState)` on success, or `Err(SaveError)` if the data is invalid
-/// or uses an unsupported format.
-pub fn deserialize(bytes: &[u8], fmt: SaveFormat) -> Result<GameState, SaveError> {
-    let env: VersionedSave<GameState> = match fmt {
-        SaveFormat::Json => {
-            serde_json::from_slice(bytes).map_err(|e| SaveError::Serde(e.to_string()))?
-        }
-        SaveFormat::Postcard => {
-            postcard::from_bytes(bytes).map_err(|e| SaveError::Serde(e.to_string()))?
-        }
-        SaveFormat::Bincode => {
-            bincode::deserialize(bytes).map_err(|e| SaveError::Serde(e.to_string()))?
-        }
-    };
-
-    if env.version > SAVE_VERSION {
-        return Err(SaveError::VersionTooNew(env.version, SAVE_VERSION));
-    }
-
-    let mut payload = env.payload;
-    // Migration loop: while the payload is older than the current schema,
-    // migrate it one version forward. No older versions exist yet
-    // (SAVE_VERSION == 1), so this is currently a no-op.
-    while payload.version < SAVE_VERSION {
-        payload = migrate(payload.version, payload)?;
-    }
-    Ok(payload)
-}
-
-// ---------------------------------------------------------------------------
-// File I/O
-// ---------------------------------------------------------------------------
-
-/// Write a [`GameState`] to `path` in the given [`SaveFormat`].
-pub fn save(state: &GameState, path: &Path, fmt: SaveFormat) -> Result<(), SaveError> {
-    let bytes = serialize(state, fmt)?;
-    std::fs::write(path, bytes)?;
-    Ok(())
-}
-
-/// Read a [`GameState`] from `path`, auto-detecting the format from the
-/// file extension.
-///
-/// - `json` -> [`SaveFormat::Json`]
-/// - `postcard` / `bin` -> [`SaveFormat::Postcard`]
-/// - `bincode` -> [`SaveFormat::Bincode`]
-/// - anything else -> [`SaveFormat::Postcard`] (the compact default)
-pub fn load(path: &Path) -> Result<GameState, SaveError> {
-    let bytes = std::fs::read(path)?;
-    let fmt = match path.extension().and_then(|s| s.to_str()) {
-        Some("json") => SaveFormat::Json,
-        Some("postcard") | Some("bin") => SaveFormat::Postcard,
-        Some("bincode") => SaveFormat::Bincode,
-        _ => SaveFormat::Postcard, // unknown extension -> postcard default
-    };
-    deserialize(&bytes, fmt)
-}
-
-/// Write a human-readable JSON debug save to `path`.
-pub fn save_debug(state: &GameState, path: &Path) -> Result<(), SaveError> {
-    save(state, path, SaveFormat::Json)
-}
-
-// ---------------------------------------------------------------------------
-// Migration registry
-// ---------------------------------------------------------------------------
-
-/// Migrate a payload from `from` to `from + 1`.
-///
-/// No older versions exist yet (`SAVE_VERSION == 1`), so there is nothing to
-/// migrate. When a breaking schema change lands, register a deterministic
-/// `(version -> version + 1)` transform here. The transform must be pure and
-/// deterministic so that a save always migrates to the same result.
-fn migrate(_from: u32, _state: GameState) -> Result<GameState, SaveError> {
-    Err(SaveError::MigrationFailed(
-        _from,
-        "no migrations registered".into(),
-    ))
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scenario::mvp_preset;
-    use crate::{Command, GameEvent, PlayerId, RejectReason};
+    use crate::model::GameState;
+    use crate::scenario::ScenarioConfig;
+    use crate::{Command, GameEvent, PlayerId, RejectReason, SAVE_VERSION, VersionedSave};
     use insta::assert_debug_snapshot;
     use insta::assert_json_snapshot;
 
     /// Build a small but non-trivial `GameState` to exercise the (de)serialize
     /// paths, including the fxhash serde helpers and the `SeededRng`.
     fn sample_state() -> GameState {
-        let mut s = GameState::new(mvp_preset(), 12345);
+        let mut s = GameState::new(ScenarioConfig::mvp_preset(), 12345);
         // Exercise fxhash collections.
         s.tile_index
             .insert(crate::hex::HexCoord { q: 0, r: 0 }, crate::TileId(0));
@@ -210,9 +82,9 @@ mod tests {
     /// bytes instead.
     fn round_trip(fmt: SaveFormat) {
         let s = sample_state();
-        let original = serialize(&s, fmt).expect("serialize");
-        let loaded = deserialize(&original, fmt).expect("deserialize");
-        let reencoded = serialize(&loaded, fmt).expect("re-serialize");
+        let original = s.serialize_to(fmt).expect("serialize");
+        let loaded = GameState::from_bytes(&original, fmt).expect("deserialize");
+        let reencoded = loaded.serialize_to(fmt).expect("re-serialize");
         assert_eq!(
             original, reencoded,
             "round-trip through {fmt:?} was not byte-stable"
@@ -243,7 +115,7 @@ mod tests {
             payload: s.clone(),
         };
         let bytes = serde_json::to_vec(&env).expect("serialize envelope");
-        let result = deserialize(&bytes, SaveFormat::Json);
+        let result = GameState::from_bytes(&bytes, SaveFormat::Json);
         match result {
             Err(SaveError::VersionTooNew(v, c)) => {
                 assert_eq!(v, SAVE_VERSION + 1);
@@ -259,10 +131,10 @@ mod tests {
         let dir = std::env::temp_dir().join("dcs_serialize_tests");
         std::fs::create_dir_all(&dir).expect("create temp dir");
         let path = dir.join("game.save.json");
-        save(&s, &path, SaveFormat::Json).expect("save");
-        let loaded = load(&path).expect("load autodetect");
-        let reencoded = serialize(&loaded, SaveFormat::Json).expect("re-serialize");
-        let original = serialize(&s, SaveFormat::Json).expect("serialize");
+        s.save(&path, SaveFormat::Json).expect("save");
+        let loaded = GameState::load(&path).expect("load autodetect");
+        let reencoded = loaded.serialize_to(SaveFormat::Json).expect("re-serialize");
+        let original = s.serialize_to(SaveFormat::Json).expect("serialize");
         assert_eq!(original, reencoded);
         let _ = std::fs::remove_file(&path);
     }
@@ -273,10 +145,12 @@ mod tests {
         let dir = std::env::temp_dir().join("dcs_serialize_tests");
         std::fs::create_dir_all(&dir).expect("create temp dir");
         let path = dir.join("game.save.postcard");
-        save(&s, &path, SaveFormat::Postcard).expect("save");
-        let loaded = load(&path).expect("load autodetect");
-        let reencoded = serialize(&loaded, SaveFormat::Postcard).expect("re-serialize");
-        let original = serialize(&s, SaveFormat::Postcard).expect("serialize");
+        s.save(&path, SaveFormat::Postcard).expect("save");
+        let loaded = GameState::load(&path).expect("load autodetect");
+        let reencoded = loaded
+            .serialize_to(SaveFormat::Postcard)
+            .expect("re-serialize");
+        let original = s.serialize_to(SaveFormat::Postcard).expect("serialize");
         assert_eq!(original, reencoded);
         let _ = std::fs::remove_file(&path);
     }
@@ -287,10 +161,12 @@ mod tests {
         let dir = std::env::temp_dir().join("dcs_serialize_tests");
         std::fs::create_dir_all(&dir).expect("create temp dir");
         let path = dir.join("game.save.bin");
-        save(&s, &path, SaveFormat::Postcard).expect("save");
-        let loaded = load(&path).expect("load autodetect");
-        let reencoded = serialize(&loaded, SaveFormat::Postcard).expect("re-serialize");
-        let original = serialize(&s, SaveFormat::Postcard).expect("serialize");
+        s.save(&path, SaveFormat::Postcard).expect("save");
+        let loaded = GameState::load(&path).expect("load autodetect");
+        let reencoded = loaded
+            .serialize_to(SaveFormat::Postcard)
+            .expect("re-serialize");
+        let original = s.serialize_to(SaveFormat::Postcard).expect("serialize");
         assert_eq!(original, reencoded);
         let _ = std::fs::remove_file(&path);
     }
@@ -306,9 +182,9 @@ mod tests {
         for _ in 0..5 {
             let _ = s.rng.next_u32();
         }
-        let original = serialize(&s, SaveFormat::Json).expect("serialize");
-        let loaded = deserialize(&original, SaveFormat::Json).expect("deserialize");
-        let reencoded = serialize(&loaded, SaveFormat::Json).expect("re-serialize");
+        let original = s.serialize_to(SaveFormat::Json).expect("serialize");
+        let loaded = GameState::from_bytes(&original, SaveFormat::Json).expect("deserialize");
+        let reencoded = loaded.serialize_to(SaveFormat::Json).expect("re-serialize");
         assert_eq!(
             original, reencoded,
             "rng state not preserved across save/load"
@@ -317,10 +193,10 @@ mod tests {
 
     #[test]
     fn serde_json_byte_stable() {
-        // Calling `serialize` twice must yield identical bytes (determinism).
+        // Calling `serialize_to` twice must yield identical bytes (determinism).
         let s = sample_state();
-        let a = serialize(&s, SaveFormat::Json).expect("serialize 1");
-        let b = serialize(&s, SaveFormat::Json).expect("serialize 2");
+        let a = s.serialize_to(SaveFormat::Json).expect("serialize 1");
+        let b = s.serialize_to(SaveFormat::Json).expect("serialize 2");
         assert_eq!(a, b, "JSON serialization is not deterministic");
     }
 
@@ -330,10 +206,10 @@ mod tests {
         let dir = std::env::temp_dir().join("dcs_serialize_tests");
         std::fs::create_dir_all(&dir).expect("create temp dir");
         let path = dir.join("debug.save.json");
-        save_debug(&s, &path).expect("save_debug");
-        let loaded = load(&path).expect("load debug save");
-        let reencoded = serialize(&loaded, SaveFormat::Json).expect("re-serialize");
-        let original = serialize(&s, SaveFormat::Json).expect("serialize");
+        s.save_debug(&path).expect("save_debug");
+        let loaded = GameState::load(&path).expect("load debug save");
+        let reencoded = loaded.serialize_to(SaveFormat::Json).expect("re-serialize");
+        let original = s.serialize_to(SaveFormat::Json).expect("serialize");
         assert_eq!(original, reencoded);
         let _ = std::fs::remove_file(&path);
     }

@@ -24,9 +24,10 @@ use fxhash::FxHashSet;
 use crate::hex::{AXIAL_DIRS, HexCoord, ORIGIN};
 use crate::model::{
     FOUND_CITY_INFLUENCE, GameState, Player, PlayerColor, PlayerKind, Relic, Stockpiles,
-    TerrainType, Tile, TurnPhase, Unit, UnitAbility, starting_wealth, unit_def,
+    TerrainType, Tile, TurnPhase, Unit, UnitAbility, starting_wealth,
 };
 use crate::scenario::{AiPersonality, Difficulty, ScenarioConfig};
+use crate::traits::UnitKindExt;
 use crate::{GameEvent, PlayerId, RelicId, TileId, UnitId, UnitKind};
 
 /// Build a fresh, fully-generated game state from a scenario and seed.
@@ -349,7 +350,7 @@ fn init_players_and_starting_units(state: &mut GameState, start_oases: &[TileId]
 /// random adjacent Dunes tile, else fall back to `preferred`.
 fn spawn_unit(state: &mut GameState, player: PlayerId, kind: UnitKind, preferred: TileId) {
     let tile = choose_unit_tile(state, preferred);
-    let def = unit_def(kind);
+    let def = kind.def();
     let id = UnitId(state.units.len() as u32);
     state.units.push(Unit {
         id,
@@ -392,7 +393,7 @@ fn choose_unit_tile(state: &mut GameState, preferred: TileId) -> TileId {
 
 /// Reveal the start oasis plus `Scout.sight` radius to each player.
 fn reveal_start_fog(state: &mut GameState, start_oases: &[TileId]) {
-    let sight = unit_def(UnitKind::Scout).sight as u32;
+    let sight = UnitKind::Scout.def().sight as u32;
     for (i, &start_tile) in start_oases.iter().enumerate() {
         if i >= state.players.len() {
             break;
@@ -490,7 +491,7 @@ fn random_dunes_tile(state: &mut GameState) -> Option<TileId> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scenario::mvp_preset;
+    use crate::scenario::ScenarioConfig;
 
     fn relic_site_count(state: &GameState) -> usize {
         state.tiles.iter().filter(|t| t.is_relic_site).count()
@@ -498,8 +499,8 @@ mod tests {
 
     #[test]
     fn new_game_deterministic() {
-        let a = new_game(&mvp_preset(), 42);
-        let b = new_game(&mvp_preset(), 42);
+        let a = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let b = new_game(&ScenarioConfig::mvp_preset(), 42);
         // Field-by-field comparison (GameState lacks PartialEq).
         assert_eq!(a.tiles.len(), b.tiles.len(), "tiles len differs");
         assert_eq!(a.players.len(), b.players.len(), "players len differs");
@@ -525,8 +526,8 @@ mod tests {
 
     #[test]
     fn new_game_different_seed_differs() {
-        let a = new_game(&mvp_preset(), 1);
-        let b = new_game(&mvp_preset(), 2);
+        let a = new_game(&ScenarioConfig::mvp_preset(), 1);
+        let b = new_game(&ScenarioConfig::mvp_preset(), 2);
         // At least one tile's terrain should differ (extremely likely).
         let differs = a
             .tiles
@@ -538,13 +539,13 @@ mod tests {
 
     #[test]
     fn no_city_at_gen() {
-        let state = new_game(&mvp_preset(), 7);
+        let state = new_game(&ScenarioConfig::mvp_preset(), 7);
         assert!(state.cities.is_empty(), "world-gen must not create cities");
     }
 
     #[test]
     fn player_count_starts() {
-        let state = new_game(&mvp_preset(), 11);
+        let state = new_game(&ScenarioConfig::mvp_preset(), 11);
         assert_eq!(state.players.len(), 3, "mvp_preset has 3 players");
         assert_eq!(state.units.len(), 6, "3 players * 2 units = 6");
         assert_eq!(state.units.len(), state.players.len() * 2);
@@ -552,7 +553,7 @@ mod tests {
 
     #[test]
     fn relic_sites_present() {
-        let state = new_game(&mvp_preset(), 13);
+        let state = new_game(&ScenarioConfig::mvp_preset(), 13);
         let expected = state.scenario.relic_count as usize;
         assert_eq!(
             relic_site_count(&state),
@@ -568,7 +569,7 @@ mod tests {
 
     #[test]
     fn all_tiles_in_map() {
-        let state = new_game(&mvp_preset(), 17);
+        let state = new_game(&ScenarioConfig::mvp_preset(), 17);
         let radius = state.scenario.map_radius as u32;
         for t in &state.tiles {
             assert!(
@@ -582,7 +583,7 @@ mod tests {
 
     #[test]
     fn finalize_state() {
-        let state = new_game(&mvp_preset(), 19);
+        let state = new_game(&ScenarioConfig::mvp_preset(), 19);
         assert_eq!(state.turn, 1);
         assert_eq!(state.current_actor, PlayerId(0));
         assert_eq!(state.phase, TurnPhase::Order);
@@ -590,7 +591,7 @@ mod tests {
 
     #[test]
     fn oases_no_adjacent() {
-        let state = new_game(&mvp_preset(), 23);
+        let state = new_game(&ScenarioConfig::mvp_preset(), 23);
         let oases = oasis_tiles(&state);
         for i in 0..oases.len() {
             for j in (i + 1)..oases.len() {
@@ -603,7 +604,7 @@ mod tests {
     #[test]
     fn player_starts_have_fog() {
         // Player 0 must have discovered at least its start oasis tile.
-        let state = new_game(&mvp_preset(), 29);
+        let state = new_game(&ScenarioConfig::mvp_preset(), 29);
         // Re-derive start oases via oasis set; player 0 discovered should be
         // non-empty and include its scout's sight radius.
         assert!(!state.players[0].discovered.is_empty());
@@ -613,7 +614,7 @@ mod tests {
 
     #[test]
     fn starting_resources_set() {
-        let state = new_game(&mvp_preset(), 31);
+        let state = new_game(&ScenarioConfig::mvp_preset(), 31);
         for p in &state.players {
             assert_eq!(p.resources.wealth, starting_wealth());
             assert_eq!(p.resources.influence, FOUND_CITY_INFLUENCE);

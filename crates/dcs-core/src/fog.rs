@@ -4,7 +4,7 @@
 //! [`discovered: FxHashSet<TileId>`](crate::model::Player::discovered) that
 //! tracks which tiles have been revealed. This module owns all fog *data* and
 //! reveal logic, called from the resolver on move/found/route and from
-//! [`advance_turn`](crate::turn::advance_turn) for building/specialization
+//! [`GameState::advance_turn`](crate::model::GameState::advance_turn) for building/specialization
 //! re-reveal.
 //!
 //! # Reveal sources & radii (gameplay-fog-of-war spec §4)
@@ -17,13 +17,10 @@
 //! | City (base) | 2 |
 //! | City = Scholar Outpost | +1 (→3) |
 //! | Watchtower building | 2 around the tower tile |
+//!
+//! Fog *methods* live on [`GameState`](crate::model::GameState); see
+//! [`crate::model::GameState::reveal`], [`crate::model::GameState::city_sight`], etc.
 
-
-use crate::model::GameState;
-use crate::{
-    BuildingKind, CityId, CitySpecialization, GameEvent, PlayerId, RouteId, TileId, UnitId,
-    UnitKind,
-};
 // ---------------------------------------------------------------------------
 // Reveal radius constants (fog-of-war spec §4)
 // ---------------------------------------------------------------------------
@@ -44,161 +41,6 @@ pub const SIGHT_WATCHTOWER: u32 = 2;
 pub const SIGHT_START: u32 = SIGHT_CITY_BASE;
 
 // ---------------------------------------------------------------------------
-// Sight helpers
-// ---------------------------------------------------------------------------
-
-/// Return the sight radius for a unit kind.
-pub fn sight_of(kind: UnitKind) -> u32 {
-    match kind {
-        UnitKind::Scout => SIGHT_SCOUT,
-        UnitKind::CaravanGuard => SIGHT_GUARD,
-        UnitKind::Raider => SIGHT_RAIDER,
-    }
-}
-
-/// Compute the city's sight radius based on buildings and specialization.
-///
-/// Base sight is [`SIGHT_CITY_BASE`]; Scholar Outpost adds
-/// [`SIGHT_SCHOLAR_BONUS`]. Watchtower is handled separately in
-/// [`refresh_city_fog`] (it reveals around its own tile).
-pub fn city_sight(state: &GameState, city: CityId) -> u32 {
-    let c = &state.cities[city.0 as usize];
-    let mut radius = SIGHT_CITY_BASE;
-    if c.specialization == Some(CitySpecialization::ScholarOutpost) {
-        radius += SIGHT_SCHOLAR_BONUS;
-    }
-    radius
-}
-
-// ---------------------------------------------------------------------------
-// Reveal core
-// ---------------------------------------------------------------------------
-
-/// Reveal `range(center, r)` tiles into `player.discovered`.
-///
-/// Returns the set of *newly* revealed tiles (not already in the discovered
-/// set). Emits a [`GameEvent::Revealed`] if any new tiles were uncovered.
-/// Idempotent: calling with the same center/radius twice is a no-op the
-/// second time.
-pub fn reveal(state: &mut GameState, player: PlayerId, center: TileId, r: u32) -> Vec<TileId> {
-    let center_coord = state.tiles[center.0 as usize].coord;
-    let mut newly: Vec<TileId> = Vec::new();
-    for hex in center_coord.range(r) {
-        if let Some(&tid) = state.tile_index.get(&hex) {
-            if state.players[player.0 as usize].discovered.insert(tid) {
-                newly.push(tid);
-            }
-        }
-    }
-    if !newly.is_empty() {
-        state.log.push(GameEvent::Revealed {
-            player,
-            tiles: newly.clone(),
-        });
-    }
-    newly
-}
-
-/// Reveal fog from a unit's current position using its sight radius.
-///
-/// Called by the resolver after a unit moves (reveal-on-move, spec §6.2) and
-/// after training a new unit.
-pub fn reveal_from_unit(state: &mut GameState, unit_id: UnitId) {
-    let u = &state.units[unit_id.0 as usize];
-    let actor = u.owner;
-    let tile = u.tile;
-    let kind = u.kind;
-    reveal(state, actor, tile, sight_of(kind));
-}
-
-// ---------------------------------------------------------------------------
-// Visibility queries
-// ---------------------------------------------------------------------------
-
-/// Is `tile` currently in `player`'s discovered set?
-pub fn is_tile_visible(state: &GameState, player: PlayerId, tile: TileId) -> bool {
-    state.players[player.0 as usize].discovered.contains(&tile)
-}
-
-/// A unit is visible only if its **current** tile is discovered by the viewer.
-///
-/// Enemy units in fog are **hidden** — including from the AI (ADR-0004 purity).
-pub fn is_unit_visible(state: &GameState, viewer: PlayerId, unit_id: UnitId) -> bool {
-    let u = &state.units[unit_id.0 as usize];
-    is_tile_visible(state, viewer, u.tile)
-}
-
-/// A city is visible if ANY of its tiles (city tile + worked ring) are
-/// discovered.
-///
-/// Once seen, stays visible as a memory marker (spec §6.3): the city remains
-/// displayed at its remembered location, but its dynamic state is only
-/// live-updated while currently observed.
-pub fn is_city_visible(state: &GameState, viewer: PlayerId, city_id: CityId) -> bool {
-    let c = &state.cities[city_id.0 as usize];
-    // Check city tile.
-    if is_tile_visible(state, viewer, c.tile) {
-        return true;
-    }
-    // Check worked ring (city tile + ring(1)).
-    let city_coord = state.tiles[c.tile.0 as usize].coord;
-    for hex in city_coord.range(1) {
-        if let Some(&tid) = state.tile_index.get(&hex) {
-            if is_tile_visible(state, viewer, tid) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// A route is visible if ANY path tile is discovered.
-///
-/// Static memory marker: once seen, stays visible (spec §6.3).
-pub fn is_route_visible(state: &GameState, viewer: PlayerId, route_id: RouteId) -> bool {
-    let r = &state.routes[route_id.0 as usize];
-    for &tid in &r.path {
-        if is_tile_visible(state, viewer, tid) {
-            return true;
-        }
-    }
-    false
-}
-
-// ---------------------------------------------------------------------------
-// Re-scan helpers
-// ---------------------------------------------------------------------------
-
-/// Re-scan all owned cities and their buildings/specializations to refresh fog.
-///
-/// Called from [`advance_turn`](crate::turn::advance_turn) to handle late
-/// building/specialization (Watchtower/Scholar re-reveal, spec §6.2).
-pub fn refresh_city_fog(state: &mut GameState) {
-    // First pass: collect data without holding a borrow on `state`.
-    let cities_data: Vec<(PlayerId, TileId, u32, bool)> = state
-        .cities
-        .iter()
-        .map(|c| {
-            // Inline city_sight logic to avoid reborrowing state.
-            let mut sight = SIGHT_CITY_BASE;
-            if c.specialization == Some(CitySpecialization::ScholarOutpost) {
-                sight += SIGHT_SCHOLAR_BONUS;
-            }
-            let has_watchtower = c.buildings.contains(&BuildingKind::Watchtower);
-            (c.owner, c.tile, sight, has_watchtower)
-        })
-        .collect();
-
-    // Second pass: reveal fog using the collected data.
-    for (owner, tile, sight, has_watchtower) in cities_data {
-        reveal(state, owner, tile, sight);
-        if has_watchtower {
-            reveal(state, owner, tile, SIGHT_WATCHTOWER);
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -208,12 +50,14 @@ mod tests {
     use std::collections::VecDeque;
 
     use crate::model::{GameState, Stockpiles};
-    use crate::scenario::mvp_preset;
+    use crate::scenario::ScenarioConfig;
     use crate::test_harness;
+    use crate::traits::UnitKindExt;
+    use crate::{CityId, CitySpecialization, PlayerId, RouteId, UnitId, UnitKind};
 
     /// Build a minimal game state with a small hex map for fog tests.
     fn make_game() -> GameState {
-        let cfg = mvp_preset();
+        let cfg = ScenarioConfig::mvp_preset();
         let mut s = GameState::new(cfg, 1);
         let radius = s.scenario.map_radius as u32;
         test_harness::allocate_hex_grid(&mut s, radius);
@@ -238,12 +82,12 @@ mod tests {
 
     #[test]
     fn sight_of_matches_spec() {
-        assert_eq!(sight_of(UnitKind::Scout), SIGHT_SCOUT);
-        assert_eq!(sight_of(UnitKind::Scout), 3);
-        assert_eq!(sight_of(UnitKind::CaravanGuard), SIGHT_GUARD);
-        assert_eq!(sight_of(UnitKind::CaravanGuard), 1);
-        assert_eq!(sight_of(UnitKind::Raider), SIGHT_RAIDER);
-        assert_eq!(sight_of(UnitKind::Raider), 2);
+        assert_eq!(UnitKind::Scout.sight(), SIGHT_SCOUT);
+        assert_eq!(UnitKind::Scout.sight(), 3);
+        assert_eq!(UnitKind::CaravanGuard.sight(), SIGHT_GUARD);
+        assert_eq!(UnitKind::CaravanGuard.sight(), 1);
+        assert_eq!(UnitKind::Raider.sight(), SIGHT_RAIDER);
+        assert_eq!(UnitKind::Raider.sight(), 2);
     }
 
     #[test]
@@ -263,7 +107,7 @@ mod tests {
         let player = PlayerId(0);
         let origin_tile = s.tile_index[&crate::hex::ORIGIN];
         let before = s.players[player.0 as usize].discovered.len();
-        let newly = reveal(&mut s, player, origin_tile, 1);
+        let newly = s.reveal(player, origin_tile, 1);
         let after = s.players[player.0 as usize].discovered.len();
         assert!(after > before, "reveal should add tiles");
         assert!(!newly.is_empty(), "newly should be non-empty");
@@ -277,8 +121,8 @@ mod tests {
         let player = PlayerId(0);
         let origin_tile = s.tile_index[&crate::hex::ORIGIN];
         let before = s.players[player.0 as usize].discovered.len();
-        let newly1 = reveal(&mut s, player, origin_tile, 1);
-        let newly2 = reveal(&mut s, player, origin_tile, 1);
+        let newly1 = s.reveal(player, origin_tile, 1);
+        let newly2 = s.reveal(player, origin_tile, 1);
         assert!(newly2.is_empty(), "second reveal should be a no-op");
         assert_eq!(
             s.players[player.0 as usize].discovered.len(),
@@ -291,18 +135,18 @@ mod tests {
         let mut s = make_game();
         let player = PlayerId(0);
         let origin_tile = s.tile_index[&crate::hex::ORIGIN];
-        assert!(!is_tile_visible(&s, player, origin_tile));
-        reveal(&mut s, player, origin_tile, 1);
-        assert!(is_tile_visible(&s, player, origin_tile));
+        assert!(!s.is_tile_visible(player, origin_tile));
+        s.reveal(player, origin_tile, 1);
+        assert!(s.is_tile_visible(player, origin_tile));
     }
 
     #[test]
     fn is_tile_visible_false_for_other_player() {
         let mut s = make_game();
         let origin_tile = s.tile_index[&crate::hex::ORIGIN];
-        reveal(&mut s, PlayerId(0), origin_tile, 1);
+        s.reveal(PlayerId(0), origin_tile, 1);
         assert!(
-            !is_tile_visible(&s, PlayerId(1), origin_tile),
+            !s.is_tile_visible(PlayerId(1), origin_tile),
             "other player should not see it"
         );
     }
@@ -315,10 +159,10 @@ mod tests {
         // Player 0 sees own scout (tile not yet revealed, but own-unit check
         // still uses the same discovered set).
         // Reveal the scout's tile for player 0.
-        reveal(&mut s, PlayerId(0), origin_tile, 0);
-        assert!(is_unit_visible(&s, PlayerId(0), scout));
+        s.reveal(PlayerId(0), origin_tile, 0);
+        assert!(s.is_unit_visible(PlayerId(0), scout));
         // Player 1 hasn't revealed that tile.
-        assert!(!is_unit_visible(&s, PlayerId(1), scout));
+        assert!(!s.is_unit_visible(PlayerId(1), scout));
     }
 
     #[test]
@@ -340,7 +184,7 @@ mod tests {
             growth_timer: 0,
             queue: VecDeque::new(),
         });
-        assert_eq!(city_sight(&s, city_id), SIGHT_CITY_BASE);
+        assert_eq!(s.city_sight(city_id), SIGHT_CITY_BASE);
     }
 
     #[test]
@@ -360,10 +204,7 @@ mod tests {
             growth_timer: 0,
             queue: VecDeque::new(),
         });
-        assert_eq!(
-            city_sight(&s, city_id),
-            SIGHT_CITY_BASE + SIGHT_SCHOLAR_BONUS
-        );
+        assert_eq!(s.city_sight(city_id), SIGHT_CITY_BASE + SIGHT_SCHOLAR_BONUS);
     }
 
     #[test]
@@ -371,7 +212,7 @@ mod tests {
         let mut s = make_game();
         let scout = UnitId(0);
         let before = s.players[0].discovered.len();
-        reveal_from_unit(&mut s, scout);
+        s.reveal_from_unit(scout);
         let after = s.players[0].discovered.len();
         // Scout has sight 3, so range(center, 3) is quite large.
         assert!(after > before, "reveal_from_unit should reveal tiles");
@@ -396,9 +237,9 @@ mod tests {
             consecutive_threatened: 0,
         });
         // Neither tile is discovered for player 1.
-        assert!(!is_route_visible(&s, PlayerId(1), route_id));
+        assert!(!s.is_route_visible(PlayerId(1), route_id));
         // Reveal the origin tile for player 0 → route becomes visible.
-        reveal(&mut s, PlayerId(0), origin_tile, 0);
-        assert!(is_route_visible(&s, PlayerId(0), route_id));
+        s.reveal(PlayerId(0), origin_tile, 0);
+        assert!(s.is_route_visible(PlayerId(0), route_id));
     }
 }

@@ -27,6 +27,7 @@ pub mod map;
 pub mod model;
 pub mod scenario;
 pub mod serialize;
+pub mod traits;
 pub mod turn;
 pub mod victory;
 pub mod world;
@@ -50,3 +51,5 @@ pub use model::{
     CaravanRoute, City, GameState, Player, PlayerColor, PlayerKind, QueuedOrder, Relic,
     ResourceKind, Stockpiles, TerrainType, Tile, TurnPhase, Unit, UnitAbility, VictoryTracker,
 };
+
+pub use traits::{BuildingKindExt, CitySpecializationExt, TerrainTypeDef, UnitKindExt};

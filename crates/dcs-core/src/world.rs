@@ -1,489 +1,24 @@
 //! City and unit gameplay logic: building, training, specialization, growth,
 //! production queues, and zone-of-control calculations.
 //!
-//! This module is **pure** — no render dependencies. All randomness flows
-//! through `state.rng`; all mutations go through `GameState`.
-
-
-use crate::model::{
-    BUILD_COST, FORTRESS_TRAIN_DISCOUNT, GRANARY_WATER_BONUS, GROWTH_PERIOD_TURNS,
-    GROWTH_WATER_THRESHOLD, POP_FOR_SPECIALIZE, SPECIALIZE_COST_INFLUENCE, TERRAIN,
-    TRADE_HUB_MARKET_DISCOUNT, UNIT_CAP_BASE, UNIT_TRAIN_COST, WATER_CAP_BASE, unit_def,
-};
-use crate::{
-    BuildingKind, CityId, CitySpecialization, Command, GameEvent, GameState, PlayerId, QueuedOrder,
-    RejectReason, TileId, UnitKind,
-};
-use fxhash::FxHashSet;
-
-// ---------------------------------------------------------------------------
-// Index helpers (free functions — cannot impl foreign types)
-// ---------------------------------------------------------------------------
-
-/// Discriminant-based index for [`BuildingKind`] into cost/balance tables.
-pub fn building_index(kind: &BuildingKind) -> usize {
-    match kind {
-        BuildingKind::Well => 0,
-        BuildingKind::Market => 1,
-        BuildingKind::Granary => 2,
-        BuildingKind::Watchtower => 3,
-        BuildingKind::Caravanserai => 4,
-        BuildingKind::Temple => 5,
-    }
-}
-
-/// Discriminant-based index for [`CitySpecialization`] into balance tables.
-pub fn specialization_index(spec: &CitySpecialization) -> usize {
-    match spec {
-        CitySpecialization::TradeHub => 0,
-        CitySpecialization::WellFort => 1,
-        CitySpecialization::Fortress => 2,
-        CitySpecialization::ScholarOutpost => 3,
-    }
-}
-
-/// Discriminant-based index for [`UnitKind`] into balance tables.
-pub fn unit_kind_index(kind: &UnitKind) -> usize {
-    match kind {
-        UnitKind::Scout => 0,
-        UnitKind::CaravanGuard => 1,
-        UnitKind::Raider => 2,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Worked tiles & building slots
-// ---------------------------------------------------------------------------
-
-/// Returns worked tiles for a city: the city tile plus all tiles in ring(1).
-pub fn worked_tiles(state: &GameState, city_id: CityId) -> Vec<TileId> {
-    let c = &state.cities[city_id.0 as usize];
-    let coord = state.tiles[c.tile.0 as usize].coord;
-    let mut tiles = vec![c.tile];
-    for hex in coord.range(1) {
-        if let Some(&tid) = state.tile_index.get(&hex) {
-            tiles.push(tid);
-        }
-    }
-    tiles
-}
-
-/// Building slots for a city: 2 + population / 2.
-pub fn building_slots(city: &crate::City) -> u8 {
-    (2 + city.population / 2) as u8
-}
-
-/// Check if a unit kind can found a city (DD #4 default: only Scout).
-pub fn is_founding_unit(kind: UnitKind) -> bool {
-    matches!(kind, UnitKind::Scout)
-}
-
-// ---------------------------------------------------------------------------
-// Shared validation helpers
-// ---------------------------------------------------------------------------
-
-/// Validate and look up a city for a build/specialize command.
-/// Returns `(city_id, city_index, &City)` or `Err(RejectReason)`.
-fn validate_city_for_command(
-    state: &GameState,
-    actor: PlayerId,
-    city_id: CityId,
-) -> Result<(CityId, usize, &crate::City), RejectReason> {
-    let ci = city_id.0 as usize;
-    let city = state.cities.get(ci).ok_or(RejectReason::InvalidState)?;
-    if city.owner != actor {
-        return Err(RejectReason::InvalidState);
-    }
-    Ok((city_id, ci, city))
-}
-
-/// Check if a building can be built in a city.
-/// Returns the (possibly discounted) building cost or `Err(RejectReason)`.
-fn validate_build_conditions(
-    state: &GameState,
-    city: &crate::City,
-    building: &BuildingKind,
-) -> Result<u32, RejectReason> {
-    let bs = building_slots(city) as usize;
-    if city.buildings.len() >= bs {
-        return Err(RejectReason::Blocked);
-    }
-    if city.buildings.contains(building) {
-        return Err(RejectReason::InvalidState);
-    }
-
-    // Calculate cost (with TradeHub Market discount).
-    let base_cost = BUILD_COST[building_index(building)];
-    let cost = if *building == BuildingKind::Market
-        && city.specialization == Some(CitySpecialization::TradeHub)
-    {
-        base_cost.saturating_sub(TRADE_HUB_MARKET_DISCOUNT)
-    } else {
-        base_cost
-    };
-
-    let player = &state.players[city.owner.0 as usize];
-    if player.resources.wealth < cost {
-        return Err(RejectReason::NoResource);
-    }
-
-    Ok(cost)
-}
-
-/// Check if a city can specialize.
-/// Returns the influence cost or `Err(RejectReason)`.
-fn validate_specialize_conditions(
-    state: &GameState,
-    city: &crate::City,
-) -> Result<u32, RejectReason> {
-    if city.population < POP_FOR_SPECIALIZE {
-        return Err(RejectReason::InvalidState);
-    }
-    if city.specialization.is_some() {
-        return Err(RejectReason::InvalidState);
-    }
-
-    let player = &state.players[city.owner.0 as usize];
-    if player.resources.influence < SPECIALIZE_COST_INFLUENCE {
-        return Err(RejectReason::NoResource);
-    }
-
-    Ok(SPECIALIZE_COST_INFLUENCE)
-}
-
-// ---------------------------------------------------------------------------
-// Build resolution
-// ---------------------------------------------------------------------------
-
-/// Resolve a Build command: validate, spend wealth, add building to city.
-pub fn resolve_build(
-    state: &mut GameState,
-    city_id: CityId,
-    building: BuildingKind,
-    actor: PlayerId,
-) -> Vec<GameEvent> {
-    let cmd = Command::Build {
-        city: city_id,
-        building,
-    };
-
-    // Defense-in-depth: validate via shared helpers (validate() already ran).
-    let (_cid, ci, _city) = match validate_city_for_command(state, actor, city_id) {
-        Ok(v) => v,
-        Err(r) => {
-            return vec![GameEvent::Rejected {
-                command: cmd,
-                reason: r,
-            }]
-        }
-    };
-
-    let cost = match validate_build_conditions(state, &state.cities[ci], &building) {
-        Ok(c) => c,
-        Err(r) => {
-            return vec![GameEvent::Rejected {
-                command: cmd,
-                reason: r,
-            }]
-        }
-    };
-
-    // Spend wealth.
-    state.players[actor.0 as usize].resources.wealth -= cost;
-
-    // Add building.
-    state.cities[ci].buildings.push(building);
-
-    vec![GameEvent::Built {
-        city: city_id,
-        building,
-    }]
-}
-
-// ---------------------------------------------------------------------------
-// Specialize resolution
-// ---------------------------------------------------------------------------
-
-/// Resolve a Specialize command: validate, spend influence, set specialization.
-pub fn resolve_specialize(
-    state: &mut GameState,
-    city_id: CityId,
-    spec: CitySpecialization,
-    actor: PlayerId,
-) -> Vec<GameEvent> {
-    let cmd = Command::Specialize {
-        city: city_id,
-        spec,
-    };
-
-    // Defense-in-depth: validate via shared helpers (validate() already ran).
-    let (_cid, ci, _city) = match validate_city_for_command(state, actor, city_id) {
-        Ok(v) => v,
-        Err(r) => {
-            return vec![GameEvent::Rejected {
-                command: cmd,
-                reason: r,
-            }]
-        }
-    };
-
-    match validate_specialize_conditions(state, &state.cities[ci]) {
-        Ok(_cost) => {}
-        Err(r) => {
-            return vec![GameEvent::Rejected {
-                command: cmd,
-                reason: r,
-            }]
-        }
-    };
-
-    // Spend influence.
-    state.players[actor.0 as usize].resources.influence -= SPECIALIZE_COST_INFLUENCE;
-
-    // Set specialization.
-    state.cities[ci].specialization = Some(spec);
-
-    vec![GameEvent::Specialized {
-        city: city_id,
-        spec,
-    }]
-}
-
-// ---------------------------------------------------------------------------
-// Production queue
-// ---------------------------------------------------------------------------
-
-/// Process a city's production queue at Income phase, consuming orders
-/// head-to-tail until one cannot be afforded or completed.
-pub fn process_queue(state: &mut GameState, city_id: CityId) -> Vec<GameEvent> {
-    let mut events = Vec::new();
-    let city_idx = city_id.0 as usize;
-
-    while let Some(order) = state.cities[city_idx].queue.front().cloned() {
-        let result = match order {
-            QueuedOrder::Build(building) => {
-                if state.cities[city_idx].buildings.len()
-                    >= building_slots(&state.cities[city_idx]) as usize
-                {
-                    break; // no more slots
-                }
-                if state.cities[city_idx].buildings.contains(&building) {
-                    break; // already built
-                }
-                let cost = BUILD_COST[building_index(&building)];
-                let owner = state.cities[city_idx].owner;
-                if state.players[owner.0 as usize].resources.wealth < cost {
-                    break; // can't afford
-                }
-                state.players[owner.0 as usize].resources.wealth -= cost;
-                state.cities[city_idx].buildings.push(building);
-                Some(GameEvent::Built {
-                    city: city_id,
-                    building,
-                })
-            }
-            QueuedOrder::Train(kind) => {
-                let base_cost = UNIT_TRAIN_COST[unit_kind_index(&kind)];
-                let owner = state.cities[city_idx].owner;
-                let city = &state.cities[city_idx];
-
-                // Raider must be in Fortress.
-                if kind == UnitKind::Raider
-                    && city.specialization != Some(CitySpecialization::Fortress)
-                {
-                    break;
-                }
-
-                // Calculate cost with Fortress discount.
-                let mut cost = base_cost;
-                if city.specialization == Some(CitySpecialization::Fortress) {
-                    cost = (cost as f32 * FORTRESS_TRAIN_DISCOUNT) as u32;
-                }
-
-                if state.players[owner.0 as usize].resources.wealth < cost {
-                    break;
-                }
-
-                // Check unit cap.
-                let cap = unit_cap(state, owner);
-                let current = state.units.iter().filter(|u| u.owner == owner).count() as u32;
-                if current >= cap {
-                    break;
-                }
-
-                state.players[owner.0 as usize].resources.wealth -= cost;
-                let tile = state.cities[city_idx].tile;
-                let unit_id = state.alloc_unit_id();
-                let def = unit_def(kind);
-                state.units.push(crate::Unit {
-                    id: unit_id,
-                    owner,
-                    kind,
-                    tile,
-                    hp: def.hp as u32,
-                    moves_left: def.moves,
-                    ability: crate::UnitAbility::None,
-                });
-                crate::fog::reveal_from_unit(state, unit_id);
-                Some(GameEvent::UnitTrained {
-                    unit: unit_id,
-                    city: city_id,
-                })
-            }
-            QueuedOrder::Specialize(spec) => {
-                if state.cities[city_idx].specialization.is_some() {
-                    break;
-                }
-                if state.cities[city_idx].population < POP_FOR_SPECIALIZE {
-                    break;
-                }
-                let owner = state.cities[city_idx].owner;
-                if state.players[owner.0 as usize].resources.influence < SPECIALIZE_COST_INFLUENCE {
-                    break;
-                }
-                state.players[owner.0 as usize].resources.influence -= SPECIALIZE_COST_INFLUENCE;
-                state.cities[city_idx].specialization = Some(spec);
-                Some(GameEvent::Specialized {
-                    city: city_id,
-                    spec,
-                })
-            }
-        };
-
-        if let Some(event) = result {
-            state.cities[city_idx].queue.pop_front();
-            events.push(event);
-        } else {
-            break;
-        }
-    }
-
-    events
-}
-
-// ---------------------------------------------------------------------------
-// City growth
-// ---------------------------------------------------------------------------
-
-/// Apply city growth: check water threshold and increment timer/pop.
-pub fn apply_growth(state: &mut GameState, city_id: CityId) -> Vec<GameEvent> {
-    let mut events = Vec::new();
-    let city_idx = city_id.0 as usize;
-
-    let water_yield = city_water_yield(state, city_id);
-
-    if water_yield > GROWTH_WATER_THRESHOLD {
-        state.cities[city_idx].growth_timer += 1;
-        if state.cities[city_idx].growth_timer >= GROWTH_PERIOD_TURNS {
-            state.cities[city_idx].population += 1;
-            state.cities[city_idx].growth_timer = 0;
-            events.push(GameEvent::Grown {
-                city: city_id,
-                population: state.cities[city_idx].population,
-            });
-        }
-    } else {
-        state.cities[city_idx].growth_timer = 0;
-    }
-
-    events
-}
-
-/// Compute water yield for a city from worked tiles, Well bonus, and
-/// Well Fort specialization bonus.
-pub(crate) fn city_water_yield(state: &GameState, city_id: CityId) -> u32 {
-    let c = &state.cities[city_id.0 as usize];
-    let mut water = 0u32;
-
-    // Worked tile yields.
-    for &tid in &worked_tiles(state, city_id) {
-        let tile = &state.tiles[tid.0 as usize];
-        water += TERRAIN[tile.terrain as usize].water as u32;
-    }
-
-    // Well building bonus.
-    if c.buildings.contains(&BuildingKind::Well) {
-        water += 2;
-    }
-
-    // Well Fort specialization bonus.
-    if c.specialization == Some(CitySpecialization::WellFort) {
-        water += 3;
-    }
-
-    water
-}
-
-// ---------------------------------------------------------------------------
-// Unit cap
-// ---------------------------------------------------------------------------
-
-/// Check how many units a player can field (base + total population across
-/// their cities).
-pub fn unit_cap(state: &GameState, player: PlayerId) -> u32 {
-    let total_pop: u32 = state
-        .cities
-        .iter()
-        .filter(|c| c.owner == player)
-        .map(|c| c.population)
-        .sum();
-    UNIT_CAP_BASE + total_pop
-}
-
-// ---------------------------------------------------------------------------
-// Zone of Control
-// ---------------------------------------------------------------------------
-
-/// Fortress cities project Zone of Control onto the city tile plus its 6
-/// immediate neighbors.
-pub fn zone_of_control(state: &GameState, player: PlayerId) -> FxHashSet<TileId> {
-    let mut zoc = FxHashSet::default();
-
-    for city in &state.cities {
-        if city.owner == player && city.specialization == Some(CitySpecialization::Fortress) {
-            let coord = state.tiles[city.tile.0 as usize].coord;
-            zoc.insert(city.tile);
-            for hex in coord.range(1) {
-                if let Some(&tid) = state.tile_index.get(&hex) {
-                    zoc.insert(tid);
-                }
-            }
-        }
-    }
-
-    zoc
-}
-
-// ---------------------------------------------------------------------------
-// Resource caps
-// ---------------------------------------------------------------------------
-
-/// Get the water cap for a player (base + Granary bonuses).
-pub fn water_cap(state: &GameState, player: PlayerId) -> u32 {
-    let granaries: u32 = state
-        .cities
-        .iter()
-        .filter(|c| c.owner == player)
-        .map(|c| {
-            c.buildings
-                .iter()
-                .filter(|b| **b == BuildingKind::Granary)
-                .count() as u32
-        })
-        .sum();
-    WATER_CAP_BASE + granaries * GRANARY_WATER_BONUS
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+//! The free functions that used to live here have been moved onto
+//! [`crate::model::GameState`] (and [`crate::model::City`]) as methods. This
+//! module now only hosts their tests.
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::hex::ORIGIN;
     use crate::model::GameState;
+    use crate::model::{
+        BUILD_COST, GRANARY_WATER_BONUS, GROWTH_PERIOD_TURNS, SPECIALIZE_COST_INFLUENCE,
+        TRADE_HUB_MARKET_DISCOUNT, WATER_CAP_BASE,
+    };
     use crate::test_harness;
-    use crate::{PlayerId, Stockpiles, TerrainType, TileId};
+    use crate::traits::BuildingKindExt;
+    use crate::{
+        BuildingKind, City, CityId, CitySpecialization, GameEvent, PlayerId, QueuedOrder,
+        RejectReason, Stockpiles, TerrainType, TileId,
+    };
     use std::collections::VecDeque;
 
     /// Build a minimal deterministic `GameState` for tests.
@@ -492,7 +27,7 @@ mod tests {
         // minimal_state already creates 1 Human player with wealth=100, influence=50
         // and marks origin as Oasis
         let pid = PlayerId(0);
-        let origin = crate::hex::ORIGIN;
+        let origin = ORIGIN;
         test_harness::create_city(&mut s, pid, origin, 2);
         s
     }
@@ -501,7 +36,7 @@ mod tests {
     fn worked_tiles_returns_city_plus_ring() {
         let s = make_game();
         let city_id = CityId(0);
-        let tiles = worked_tiles(&s, city_id);
+        let tiles = s.worked_tiles(city_id);
         // Should include city tile + ring(1) tiles that are in the map.
         assert!(tiles.contains(&s.cities[0].tile));
         assert!(tiles.len() > 1, "should include ring-1 neighbors");
@@ -509,7 +44,7 @@ mod tests {
 
     #[test]
     fn building_slots_scales_with_population() {
-        let city = crate::City {
+        let city = City {
             id: CityId(0),
             owner: PlayerId(0),
             tile: TileId(0),
@@ -521,12 +56,12 @@ mod tests {
             growth_timer: 0,
             queue: VecDeque::new(),
         };
-        assert_eq!(building_slots(&city), 5); // 2 + 6/2
+        assert_eq!(city.building_slots(), 5); // 2 + 6/2
     }
 
     #[test]
     fn building_slots_zero_pop() {
-        let city = crate::City {
+        let city = City {
             id: CityId(0),
             owner: PlayerId(0),
             tile: TileId(0),
@@ -538,19 +73,19 @@ mod tests {
             growth_timer: 0,
             queue: VecDeque::new(),
         };
-        assert_eq!(building_slots(&city), 2); // 2 + 0/2
+        assert_eq!(city.building_slots(), 2); // 2 + 0/2
     }
 
     #[test]
     fn resolve_build_spends_wealth_and_adds_building() {
         let mut s = make_game();
         let wealth_before = s.players[0].resources.wealth;
-        let events = resolve_build(&mut s, CityId(0), BuildingKind::Well, PlayerId(0));
+        let events = s.resolve_build(CityId(0), BuildingKind::Well, PlayerId(0));
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0], GameEvent::Built { .. }));
         assert_eq!(
             s.players[0].resources.wealth,
-            wealth_before - BUILD_COST[building_index(&BuildingKind::Well)]
+            wealth_before - BUILD_COST[BuildingKind::Well.index()]
         );
         assert!(s.cities[0].buildings.contains(&BuildingKind::Well));
     }
@@ -564,7 +99,7 @@ mod tests {
             BuildingKind::Market,
             BuildingKind::Granary,
         ];
-        let events = resolve_build(&mut s, CityId(0), BuildingKind::Watchtower, PlayerId(0));
+        let events = s.resolve_build(CityId(0), BuildingKind::Watchtower, PlayerId(0));
         assert!(matches!(
             events[0],
             GameEvent::Rejected {
@@ -578,7 +113,7 @@ mod tests {
     fn resolve_build_rejects_when_not_enough_wealth() {
         let mut s = make_game();
         s.players[0].resources.wealth = 0;
-        let events = resolve_build(&mut s, CityId(0), BuildingKind::Well, PlayerId(0));
+        let events = s.resolve_build(CityId(0), BuildingKind::Well, PlayerId(0));
         assert!(matches!(
             events[0],
             GameEvent::Rejected {
@@ -592,7 +127,7 @@ mod tests {
     fn resolve_build_rejects_duplicate_building() {
         let mut s = make_game();
         s.cities[0].buildings.push(BuildingKind::Well);
-        let events = resolve_build(&mut s, CityId(0), BuildingKind::Well, PlayerId(0));
+        let events = s.resolve_build(CityId(0), BuildingKind::Well, PlayerId(0));
         assert!(matches!(
             events[0],
             GameEvent::Rejected {
@@ -607,10 +142,9 @@ mod tests {
         let mut s = make_game();
         s.cities[0].specialization = Some(CitySpecialization::TradeHub);
         let wealth_before = s.players[0].resources.wealth;
-        let events = resolve_build(&mut s, CityId(0), BuildingKind::Market, PlayerId(0));
+        let events = s.resolve_build(CityId(0), BuildingKind::Market, PlayerId(0));
         assert!(matches!(events[0], GameEvent::Built { .. }));
-        let expected_cost =
-            BUILD_COST[building_index(&BuildingKind::Market)] - TRADE_HUB_MARKET_DISCOUNT;
+        let expected_cost = BUILD_COST[BuildingKind::Market.index()] - TRADE_HUB_MARKET_DISCOUNT;
         assert_eq!(s.players[0].resources.wealth, wealth_before - expected_cost);
     }
 
@@ -618,8 +152,7 @@ mod tests {
     fn resolve_specialize_requires_pop_3() {
         let mut s = make_game();
         // City has pop=2, needs >= 3.
-        let events =
-            resolve_specialize(&mut s, CityId(0), CitySpecialization::Fortress, PlayerId(0));
+        let events = s.resolve_specialize(CityId(0), CitySpecialization::Fortress, PlayerId(0));
         assert!(matches!(
             events[0],
             GameEvent::Rejected {
@@ -634,8 +167,7 @@ mod tests {
         let mut s = make_game();
         s.cities[0].population = 5;
         s.cities[0].specialization = Some(CitySpecialization::TradeHub);
-        let events =
-            resolve_specialize(&mut s, CityId(0), CitySpecialization::Fortress, PlayerId(0));
+        let events = s.resolve_specialize(CityId(0), CitySpecialization::Fortress, PlayerId(0));
         assert!(matches!(
             events[0],
             GameEvent::Rejected {
@@ -650,8 +182,7 @@ mod tests {
         let mut s = make_game();
         s.cities[0].population = 5;
         let infl_before = s.players[0].resources.influence;
-        let events =
-            resolve_specialize(&mut s, CityId(0), CitySpecialization::Fortress, PlayerId(0));
+        let events = s.resolve_specialize(CityId(0), CitySpecialization::Fortress, PlayerId(0));
         assert!(matches!(events[0], GameEvent::Specialized { .. }));
         assert_eq!(
             s.players[0].resources.influence,
@@ -670,7 +201,7 @@ mod tests {
             QueuedOrder::Build(BuildingKind::Well),
             QueuedOrder::Build(BuildingKind::Market),
         ]);
-        let events = process_queue(&mut s, CityId(0));
+        let events = s.process_queue(CityId(0));
         assert_eq!(events.len(), 2);
         assert!(s.cities[0].buildings.contains(&BuildingKind::Well));
         assert!(s.cities[0].buildings.contains(&BuildingKind::Market));
@@ -686,7 +217,7 @@ mod tests {
             QueuedOrder::Build(BuildingKind::Well),
             QueuedOrder::Build(BuildingKind::Market),
         ]);
-        let events = process_queue(&mut s, CityId(0));
+        let events = s.process_queue(CityId(0));
         assert_eq!(events.len(), 1); // Only Well built.
         assert!(s.cities[0].buildings.contains(&BuildingKind::Well));
         assert!(!s.cities[0].buildings.contains(&BuildingKind::Market));
@@ -708,7 +239,7 @@ mod tests {
         }
         // Oasis city: water_yield > GROWTH_WATER_THRESHOLD.
         s.cities[0].growth_timer = GROWTH_PERIOD_TURNS - 1;
-        let events = apply_growth(&mut s, CityId(0));
+        let events = s.apply_growth(CityId(0));
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0], GameEvent::Grown { population: 3, .. }));
         assert_eq!(s.cities[0].population, 3);
@@ -721,7 +252,7 @@ mod tests {
         // Place city on a Dunes tile (water yield 0 < threshold).
         s.tiles[s.cities[0].tile.0 as usize].terrain = TerrainType::Dunes;
         s.cities[0].growth_timer = 2;
-        let events = apply_growth(&mut s, CityId(0));
+        let events = s.apply_growth(CityId(0));
         assert!(events.is_empty());
         assert_eq!(s.cities[0].growth_timer, 0, "timer should reset");
     }
@@ -729,7 +260,7 @@ mod tests {
     #[test]
     fn unit_cap_calculation() {
         let s = make_game();
-        let cap = unit_cap(&s, PlayerId(0));
+        let cap = s.unit_cap(PlayerId(0));
         // pop = 2, UNIT_CAP_BASE = 2 → cap = 4.
         assert_eq!(cap, 4);
     }
@@ -738,7 +269,7 @@ mod tests {
     fn zone_of_control_from_fortress() {
         let mut s = make_game();
         s.cities[0].specialization = Some(CitySpecialization::Fortress);
-        let zoc = zone_of_control(&s, PlayerId(0));
+        let zoc = s.zone_of_control(PlayerId(0));
         assert!(zoc.contains(&s.cities[0].tile));
         assert!(zoc.len() > 1, "should include ring-1 tiles");
     }
@@ -746,7 +277,7 @@ mod tests {
     #[test]
     fn zone_of_control_empty_without_fortress() {
         let s = make_game();
-        let zoc = zone_of_control(&s, PlayerId(0));
+        let zoc = s.zone_of_control(PlayerId(0));
         assert!(zoc.is_empty());
     }
 
@@ -754,14 +285,14 @@ mod tests {
     fn water_cap_with_granary() {
         let mut s = make_game();
         s.cities[0].buildings.push(BuildingKind::Granary);
-        let cap = water_cap(&s, PlayerId(0));
+        let cap = s.water_cap(PlayerId(0));
         assert_eq!(cap, WATER_CAP_BASE + GRANARY_WATER_BONUS);
     }
 
     #[test]
     fn water_cap_without_granary() {
         let s = make_game();
-        let cap = water_cap(&s, PlayerId(0));
+        let cap = s.water_cap(PlayerId(0));
         assert_eq!(cap, WATER_CAP_BASE);
     }
 }

@@ -2,13 +2,13 @@
 //!
 //! All randomness flows through `state.rng` (ADR-0006). Emits
 //! `GameEvent::Combat` / `RouteRaided` / `CityRaided`.
+//!
+//! The core resolution functions (`resolve_combat`, `resolve_raid_contest`,
+//! `resolve_city_raid`) are methods on [`GameState`](crate::model::GameState).
+//! This module retains the constants and the pure `positioning_attacker`
+//! utility.
 
-
-use crate::model::{GameState, TerrainType, terrain_def, unit_def};
-use crate::{
-    CityId, CitySpecialization, GameEvent, PlayerId, RouteId, RouteStatus, TileId, UnitAbility,
-    UnitId, UnitKind,
-};
+use crate::model::TerrainType;
 // ---------------------------------------------------------------------------
 // Constants (spec §4)
 // ---------------------------------------------------------------------------
@@ -31,7 +31,7 @@ pub const FORTRESS_CITY_DEF: i8 = 3;
 /// - Ridge attacker vs non-Ridge defender → `1.0 + FLANK_POSITIONING_BONUS`
 /// - Salt Flats attacker → `EXPOSED_POSITIONING_MULT`
 /// - Otherwise → `1.0`
-fn positioning_attacker(attacker_terrain: TerrainType, defender_terrain: TerrainType) -> f32 {
+pub fn positioning_attacker(attacker_terrain: TerrainType, defender_terrain: TerrainType) -> f32 {
     if attacker_terrain == TerrainType::Ridges && defender_terrain != TerrainType::Ridges {
         return 1.0 + FLANK_POSITIONING_BONUS;
     }
@@ -39,357 +39,6 @@ fn positioning_attacker(attacker_terrain: TerrainType, defender_terrain: Terrain
         return EXPOSED_POSITIONING_MULT;
     }
     1.0
-}
-
-// ---------------------------------------------------------------------------
-// Core combat (spec §6.1)
-// ---------------------------------------------------------------------------
-
-/// Resolve auto-combat between two units.
-///
-/// Each exchange rolls `state.rng.next_f32()` against the computed odds.
-/// The loser of each exchange takes exactly 1 HP damage. Combat continues
-/// until one side is destroyed or the attacker auto-retreats (spec §6.6).
-///
-/// `origin_tile` is the tile the attacker retreats to if it would die.
-///
-/// Returns a [`GameEvent::Combat`] summarizing the outcome.
-pub fn resolve_combat(
-    state: &mut GameState,
-    attacker_id: UnitId,
-    defender_id: UnitId,
-    origin_tile: TileId,
-) -> Vec<GameEvent> {
-    // Guard: refuse self-combat and missing units.
-    if attacker_id == defender_id {
-        return Vec::new();
-    }
-    let attacker_idx = attacker_id.0 as usize;
-    let defender_idx = defender_id.0 as usize;
-    if state.units.get(attacker_idx).is_none() || state.units.get(defender_idx).is_none() {
-        return Vec::new();
-    }
-
-    // Collect stats (avoids borrow issues during the mutation loop).
-    let atk_kind = state.units[attacker_idx].kind;
-    let def_kind = state.units[defender_idx].kind;
-    let atk_stat = unit_def(atk_kind).atk as f32;
-    let def_stat = unit_def(def_kind).def as f32;
-
-    let attacker_tile = state.units[attacker_idx].tile;
-    let defender_tile = state.units[defender_idx].tile;
-    let atk_terrain = state.tiles[attacker_tile.0 as usize].terrain;
-    let def_terrain = state.tiles[defender_tile.0 as usize].terrain;
-    let terrain_mod = terrain_def(def_terrain).defense_mod as f32;
-
-    // Compute attack / defense power (spec §6.1).
-    let atk_pos = positioning_attacker(atk_terrain, def_terrain);
-    let attack_power = atk_stat * atk_pos * 1.0; // morale = 1.0 (MVP)
-    let defense_power = def_stat * (1.0 + terrain_mod);
-
-    let odds = if attack_power + defense_power > 0.0 {
-        attack_power / (attack_power + defense_power)
-    } else {
-        0.5
-    };
-
-    // Combat loop: each exchange, roll vs odds.
-    let mut attacker_loss = 0u32;
-    let mut defender_loss = 0u32;
-    let mut retreated = false;
-    let mut defender_destroyed = false;
-
-    loop {
-        let roll = state.rng.next_f32();
-
-        if roll < odds {
-            // Defender takes 1 HP damage.
-            state.units[defender_idx].hp -= 1;
-            defender_loss += 1;
-
-            if state.units[defender_idx].hp == 0 {
-                defender_destroyed = true;
-                break;
-            }
-        } else {
-            // Attacker takes 1 HP damage.
-            state.units[attacker_idx].hp -= 1;
-            attacker_loss += 1;
-
-            // Auto-retreat: attacker falls back before dying (spec §6.6).
-            if state.units[attacker_idx].hp == 0 {
-                state.units[attacker_idx].hp = 1;
-                state.units[attacker_idx].tile = origin_tile;
-                state.units[attacker_idx].moves_left = 0;
-                retreated = true;
-                break;
-            }
-        }
-    }
-
-    // Remove destroyed defender (spec §7).
-    if defender_destroyed {
-        state.units.retain(|u| u.id != defender_id);
-    }
-
-    vec![GameEvent::Combat {
-        attacker: attacker_id,
-        defender: defender_id,
-        attacker_loss,
-        defender_loss,
-        retreated,
-    }]
-}
-
-// ---------------------------------------------------------------------------
-// Raid contest (spec §6.3)
-// ---------------------------------------------------------------------------
-
-/// Resolve a Raider-vs-route contest.
-///
-/// If a controlling Guard is on or adjacent to the route path, a stat
-/// contest determines the outcome. Otherwise the route auto-cascades.
-pub fn resolve_raid_contest(
-    state: &mut GameState,
-    raider_id: UnitId,
-    route_id: RouteId,
-) -> Vec<GameEvent> {
-    // Validate inputs.
-    if state.units.get(raider_id.0 as usize).is_none() {
-        return vec![GameEvent::Warn {
-            message: "Raid failed: raider unit not found".into(),
-        }];
-    }
-    if state.routes.get(route_id.0 as usize).is_none() {
-        return vec![GameEvent::Warn {
-            message: "Raid failed: route not found".into(),
-        }];
-    }
-
-    // Collect data (avoid borrow issues).
-    let raider_owner = state.units[raider_id.0 as usize].owner;
-    let raider_tile = state.units[raider_id.0 as usize].tile;
-    let route_owner = state.routes[route_id.0 as usize].owner;
-    let route_path: Vec<TileId> = state.routes[route_id.0 as usize].path.clone();
-
-    // Check for a controlling Guard on / adjacent to the route.
-    let guard_id = find_controlling_guard(state, &route_path, route_owner);
-
-    if let Some(guard_id) = guard_id {
-        // Stat contest: Raider atk vs Guard def (spec §6.3).
-        let raider_tile_terrain = state.tiles[raider_tile.0 as usize].terrain;
-        let raider_atk_pos = match raider_tile_terrain {
-            TerrainType::Ridges => ROUGH_RAIDER_BONUS,
-            TerrainType::SaltFlats => EXPOSED_POSITIONING_MULT,
-            _ => 1.0,
-        };
-        let raider_atk = unit_def(UnitKind::Raider).atk as f32 * raider_atk_pos;
-
-        let guard_tile = state.units[guard_id.0 as usize].tile;
-        let guard_tile_terrain = state.tiles[guard_tile.0 as usize].terrain;
-        let guard_def_mod = terrain_def(guard_tile_terrain).defense_mod as f32;
-        let guard_def = unit_def(UnitKind::CaravanGuard).def as f32 * (1.0 + guard_def_mod);
-
-        let odds = if raider_atk + guard_def > 0.0 {
-            raider_atk / (raider_atk + guard_def)
-        } else {
-            0.5
-        };
-
-        let roll = state.rng.next_f32();
-
-        if roll < odds {
-            // Raid succeeds → cascade.
-            cascade_route(state, route_id);
-            let severed = state.routes[route_id.0 as usize].status == RouteStatus::Severed;
-            vec![GameEvent::RouteRaided {
-                route: route_id,
-                by: raider_owner,
-                severed,
-            }]
-        } else {
-            // Guard repels — route stays Active.
-            vec![GameEvent::RouteRaided {
-                route: route_id,
-                by: raider_owner,
-                severed: false,
-            }]
-        }
-    } else {
-        // No defender → auto cascade.
-        cascade_route(state, route_id);
-        let severed = state.routes[route_id.0 as usize].status == RouteStatus::Severed;
-        vec![GameEvent::RouteRaided {
-            route: route_id,
-            by: raider_owner,
-            severed,
-        }]
-    }
-}
-
-/// Find a Guard owned by `route_owner` on or adjacent to any route-path tile.
-fn find_controlling_guard(
-    state: &GameState,
-    route_path: &[TileId],
-    route_owner: PlayerId,
-) -> Option<UnitId> {
-    for &path_tile in route_path {
-        // Units ON this tile.
-        for u in &state.units {
-            if u.owner == route_owner && u.kind == UnitKind::CaravanGuard && u.tile == path_tile {
-                return Some(u.id);
-            }
-        }
-
-        // Units ADJACENT to this tile.
-        let path_coord = state.tiles[path_tile.0 as usize].coord;
-        for n in path_coord.neighbors() {
-            if let Some(&adj_tile) = state.tile_index.get(&n) {
-                for u in &state.units {
-                    if u.owner == route_owner
-                        && u.kind == UnitKind::CaravanGuard
-                        && u.tile == adj_tile
-                    {
-                        return Some(u.id);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-/// Cascade a route's status: `Active → Threatened`, `Threatened → Severed`.
-fn cascade_route(state: &mut GameState, route_id: RouteId) {
-    let route = &mut state.routes[route_id.0 as usize];
-    route.status = match route.status {
-        RouteStatus::Active => RouteStatus::Threatened,
-        RouteStatus::Threatened => RouteStatus::Severed,
-        RouteStatus::Severed => RouteStatus::Severed,
-    };
-}
-
-// ---------------------------------------------------------------------------
-// City raid (spec §6.4)
-// ---------------------------------------------------------------------------
-
-/// Resolve a city raid: Raider vs city (garrison + Fortress + terrain).
-///
-/// On attacker win: `city.population -= 1`. If population reaches 0 and
-/// the Raider occupies the city tile, the city is **captured** (owner flip).
-pub fn resolve_city_raid(
-    state: &mut GameState,
-    raider_id: UnitId,
-    city_id: CityId,
-) -> Vec<GameEvent> {
-    // Validate inputs.
-    let raider_idx = raider_id.0 as usize;
-    let city_idx = city_id.0 as usize;
-
-    if state.units.get(raider_idx).is_none() || state.cities.get(city_idx).is_none() {
-        return vec![GameEvent::Warn {
-            message: "City raid failed: unit or city not found".into(),
-        }];
-    }
-
-    let raider_owner = state.units[raider_idx].owner;
-    let city_owner = state.cities[city_idx].owner;
-    let city_tile = state.cities[city_idx].tile;
-    let city_pop = state.cities[city_idx].population;
-
-    // Cannot raid own city.
-    if raider_owner == city_owner {
-        return vec![GameEvent::Warn {
-            message: "Cannot raid own city".into(),
-        }];
-    }
-
-    if city_pop == 0 {
-        return vec![GameEvent::Warn {
-            message: "City has no population to raid".into(),
-        }];
-    }
-
-    // --- Compute city defense (spec §6.4) ---
-    let city_terrain = state.tiles[city_tile.0 as usize].terrain;
-    let terrain_mod = terrain_def(city_terrain).defense_mod as f32;
-
-    let fortress_bonus =
-        if state.cities[city_idx].specialization == Some(CitySpecialization::Fortress) {
-            FORTRESS_CITY_DEF as f32
-        } else {
-            0.0
-        };
-
-    // Sum garrisoned Guard def.
-    let mut garrison_def = 0.0f32;
-    for u in &state.units {
-        if u.owner == city_owner
-            && u.kind == UnitKind::CaravanGuard
-            && u.tile == city_tile
-            && u.ability == UnitAbility::Garrisoned
-        {
-            garrison_def += unit_def(UnitKind::CaravanGuard).def as f32;
-        }
-    }
-
-    // City's aggregate defense (terrain_mod already included).
-    let city_def = (terrain_mod + fortress_bonus + garrison_def).max(0.0);
-
-    // --- Raider attack power ---
-    let raider_tile = state.units[raider_idx].tile;
-    let raider_terrain = state.tiles[raider_tile.0 as usize].terrain;
-    let atk_pos = positioning_attacker(raider_terrain, city_terrain);
-    let attack_power = unit_def(UnitKind::Raider).atk as f32 * atk_pos;
-    let defense_power = city_def;
-
-    let odds = if attack_power + defense_power > 0.0 {
-        attack_power / (attack_power + defense_power)
-    } else {
-        0.5
-    };
-
-    // --- Combat loop with city HP ---
-    let mut remaining_pop = city_pop as i32;
-    let mut pop_lost = 0u32;
-
-    loop {
-        let roll = state.rng.next_f32();
-
-        if roll < odds {
-            // City takes damage.
-            remaining_pop -= 1;
-            pop_lost += 1;
-
-            if remaining_pop <= 0 {
-                break;
-            }
-        } else {
-            // Raider takes damage.
-            state.units[raider_idx].hp -= 1;
-
-            if state.units[raider_idx].hp == 0 {
-                // Auto-retreat: survive at 1 HP, stop the raid.
-                state.units[raider_idx].hp = 1;
-                state.units[raider_idx].moves_left = 0;
-                break;
-            }
-        }
-    }
-
-    // Apply population loss.
-    state.cities[city_idx].population = state.cities[city_idx].population.saturating_sub(pop_lost);
-
-    // Check for capture (spec §6.4): pop == 0 AND raider on city tile.
-    if state.cities[city_idx].population == 0 && state.units[raider_idx].tile == city_tile {
-        state.cities[city_idx].owner = raider_owner;
-    }
-
-    vec![GameEvent::CityRaided {
-        city: city_id,
-        by: raider_owner,
-        pop_lost,
-    }]
 }
 
 // ---------------------------------------------------------------------------
@@ -401,18 +50,22 @@ mod tests {
     use super::*;
     use std::collections::VecDeque;
 
+    use crate::GameState;
     use crate::hex::HexCoord;
     use crate::model::Stockpiles;
-    use crate::scenario::mvp_preset;
+    use crate::scenario::ScenarioConfig;
     use crate::test_harness;
-    use crate::{AiPersonality, Difficulty, PlayerKind};
+    use crate::{
+        AiPersonality, CityId, Difficulty, GameEvent, PlayerId, PlayerKind, RouteId, RouteStatus,
+        TileId, UnitId, UnitKind,
+    };
 
     // ---- test harness ------------------------------------------------------
 
     /// Build a minimal game state for combat tests with optional terrain
     /// overrides applied to specific hex coordinates.
     fn make_game(seed: u64, terrain_overrides: &[(HexCoord, TerrainType)]) -> GameState {
-        let cfg = mvp_preset();
+        let cfg = ScenarioConfig::mvp_preset();
         let mut s = GameState::new(cfg, seed);
         let radius = s.scenario.map_radius as u32;
         test_harness::allocate_hex_grid(&mut s, radius);
@@ -494,7 +147,7 @@ mod tests {
         let atk = add_unit(&mut s, PlayerId(0), UnitKind::Raider, origin_tile, 4);
         let def = add_unit(&mut s, PlayerId(1), UnitKind::Scout, neighbor_tile, 1);
 
-        let events = resolve_combat(&mut s, atk, def, origin_tile);
+        let events = s.resolve_combat(atk, def, origin_tile);
 
         assert_eq!(events.len(), 1);
         if let GameEvent::Combat {
@@ -530,7 +183,7 @@ mod tests {
         let atk = add_unit(&mut s, PlayerId(0), UnitKind::Raider, neighbor_tile, 1);
         let def = add_unit(&mut s, PlayerId(1), UnitKind::Scout, neighbor_tile, 3);
 
-        let events = resolve_combat(&mut s, atk, def, origin_tile);
+        let events = s.resolve_combat(atk, def, origin_tile);
 
         assert_eq!(events.len(), 1);
         if let GameEvent::Combat { retreated, .. } = &events[0] {
@@ -557,7 +210,7 @@ mod tests {
         let tile = s.tile_index[&HexCoord { q: 0, r: 0 }];
         let unit = add_unit(&mut s, PlayerId(0), UnitKind::Raider, tile, 4);
 
-        let events = resolve_combat(&mut s, unit, unit, tile);
+        let events = s.resolve_combat(unit, unit, tile);
         assert!(events.is_empty(), "self-combat should produce no events");
     }
 
@@ -567,7 +220,7 @@ mod tests {
         let tile = s.tile_index[&HexCoord { q: 0, r: 0 }];
         let atk = add_unit(&mut s, PlayerId(0), UnitKind::Raider, tile, 4);
 
-        let events = resolve_combat(&mut s, atk, UnitId(999), tile);
+        let events = s.resolve_combat(atk, UnitId(999), tile);
         assert!(events.is_empty(), "missing unit should produce no events");
     }
 
@@ -587,7 +240,7 @@ mod tests {
         let atk = add_unit(&mut s, PlayerId(0), UnitKind::Raider, origin_tile, 4);
         let def = add_unit(&mut s, PlayerId(1), UnitKind::Scout, ridge_tile, 3);
 
-        let events = resolve_combat(&mut s, atk, def, origin_tile);
+        let events = s.resolve_combat(atk, def, origin_tile);
 
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], GameEvent::Combat { .. }));
@@ -619,7 +272,7 @@ mod tests {
 
         let raider = add_unit(&mut s, PlayerId(0), UnitKind::Raider, raider_tile, 4);
 
-        let events = resolve_raid_contest(&mut s, raider, route_id);
+        let events = s.resolve_raid_contest(raider, route_id);
 
         assert_eq!(events.len(), 1);
         if let GameEvent::RouteRaided { route, severed, .. } = &events[0] {
@@ -661,14 +314,14 @@ mod tests {
         let raider = add_unit(&mut s, PlayerId(0), UnitKind::Raider, raider_tile, 4);
 
         // First raid: Active → Threatened.
-        let _ = resolve_raid_contest(&mut s, raider, route_id);
+        let _ = s.resolve_raid_contest(raider, route_id);
         assert_eq!(
             s.routes[route_id.0 as usize].status,
             RouteStatus::Threatened
         );
 
         // Second raid: Threatened → Severed.
-        let events = resolve_raid_contest(&mut s, raider, route_id);
+        let events = s.resolve_raid_contest(raider, route_id);
         assert_eq!(events.len(), 1);
         if let GameEvent::RouteRaided { severed, .. } = &events[0] {
             assert!(*severed, "second raid should sever the route");
@@ -701,7 +354,7 @@ mod tests {
         // Guard on the route tile — should trigger stat contest.
         let _guard = add_unit(&mut s, PlayerId(1), UnitKind::CaravanGuard, route_tile, 5);
 
-        let events = resolve_raid_contest(&mut s, raider, route_id);
+        let events = s.resolve_raid_contest(raider, route_id);
 
         assert_eq!(events.len(), 1);
         if let GameEvent::RouteRaided { route, severed, .. } = &events[0] {
@@ -745,7 +398,7 @@ mod tests {
         // Guard ADJACENT to route tile — should still trigger stat contest.
         let _guard = add_unit(&mut s, PlayerId(1), UnitKind::CaravanGuard, guard_tile, 5);
 
-        let events = resolve_raid_contest(&mut s, raider, route_id);
+        let events = s.resolve_raid_contest(raider, route_id);
 
         assert_eq!(events.len(), 1);
         // With a guard (even adjacent), the route should not auto-cascade
@@ -760,7 +413,7 @@ mod tests {
     #[test]
     fn raid_missing_unit_warns() {
         let mut s = make_game(42, &[]);
-        let events = resolve_raid_contest(&mut s, UnitId(999), RouteId(0));
+        let events = s.resolve_raid_contest(UnitId(999), RouteId(0));
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], GameEvent::Warn { .. }));
     }
@@ -782,7 +435,7 @@ mod tests {
             owner: PlayerId(1),
             tile: city_tile,
             population: 3,
-            specialization: Some(CitySpecialization::Fortress),
+            specialization: Some(crate::CitySpecialization::Fortress),
             buildings: vec![],
             stockpiles: Stockpiles::default(),
             route_slots: 2,
@@ -792,7 +445,7 @@ mod tests {
 
         let raider = add_unit(&mut s, PlayerId(0), UnitKind::Raider, raider_tile, 4);
 
-        let events = resolve_city_raid(&mut s, raider, city_id);
+        let events = s.resolve_city_raid(raider, city_id);
 
         assert_eq!(events.len(), 1);
         if let GameEvent::CityRaided { city, pop_lost, .. } = &events[0] {
@@ -833,7 +486,7 @@ mod tests {
 
         let raider = add_unit(&mut s, PlayerId(0), UnitKind::Raider, raider_tile, 4);
 
-        let events = resolve_city_raid(&mut s, raider, city_id);
+        let events = s.resolve_city_raid(raider, city_id);
 
         assert_eq!(events.len(), 1);
         if let GameEvent::CityRaided { pop_lost, .. } = &events[0] {
@@ -874,7 +527,7 @@ mod tests {
         // Raider ON the city tile → capture when pop hits 0.
         let raider = add_unit(&mut s, PlayerId(0), UnitKind::Raider, city_tile, 4);
 
-        let events = resolve_city_raid(&mut s, raider, city_id);
+        let events = s.resolve_city_raid(raider, city_id);
 
         assert_eq!(events.len(), 1);
         if let GameEvent::CityRaided { pop_lost, .. } = &events[0] {
@@ -919,7 +572,7 @@ mod tests {
         // Raider NOT on the city tile.
         let raider = add_unit(&mut s, PlayerId(0), UnitKind::Raider, raider_tile, 4);
 
-        let events = resolve_city_raid(&mut s, raider, city_id);
+        let events = s.resolve_city_raid(raider, city_id);
 
         assert_eq!(events.len(), 1);
         if let GameEvent::CityRaided { pop_lost, .. } = &events[0] {
@@ -963,7 +616,7 @@ mod tests {
 
         let raider = add_unit(&mut s, PlayerId(0), UnitKind::Raider, city_tile, 4);
 
-        let events = resolve_city_raid(&mut s, raider, city_id);
+        let events = s.resolve_city_raid(raider, city_id);
 
         assert_eq!(events.len(), 1);
         assert!(
@@ -975,7 +628,7 @@ mod tests {
     #[test]
     fn city_raid_missing_inputs_warns() {
         let mut s = make_game(42, &[]);
-        let events = resolve_city_raid(&mut s, UnitId(999), CityId(999));
+        let events = s.resolve_city_raid(UnitId(999), CityId(999));
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], GameEvent::Warn { .. }));
     }

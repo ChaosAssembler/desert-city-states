@@ -1,12 +1,12 @@
 // This file should be moved to crates/dcs-core/benches/game_benchmarks.rs
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use dcs_core::hex::{self, HexCoord};
 use dcs_core::model::Tile;
-use dcs_core::scenario::mvp_preset;
+use dcs_core::scenario::ScenarioConfig;
 use dcs_core::{GameState, TerrainType, TileId};
 
 fn setup_game_state() -> GameState {
-    let cfg = mvp_preset();
+    let cfg = ScenarioConfig::mvp_preset();
     let mut state = GameState::new(cfg, 1);
     let radius = state.scenario.map_radius as u32;
     for (i, coord) in hex::ORIGIN.range(radius).into_iter().enumerate() {
@@ -34,9 +34,7 @@ fn bench_hex_distance(c: &mut Criterion) {
 
 fn bench_hex_neighbors(c: &mut Criterion) {
     let coord = HexCoord { q: 0, r: 0 };
-    c.bench_function("hex_neighbors", |b| {
-        b.iter(|| black_box(coord).neighbors())
-    });
+    c.bench_function("hex_neighbors", |b| b.iter(|| black_box(coord).neighbors()));
 }
 
 fn bench_hex_range(c: &mut Criterion) {
@@ -46,9 +44,7 @@ fn bench_hex_range(c: &mut Criterion) {
 }
 
 fn bench_game_state_creation(c: &mut Criterion) {
-    c.bench_function("game_state_creation", |b| {
-        b.iter(setup_game_state)
-    });
+    c.bench_function("game_state_creation", |b| b.iter(setup_game_state));
 }
 
 criterion_group!(

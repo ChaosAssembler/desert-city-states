@@ -8,7 +8,7 @@ use crate::hex::{HexCoord, ORIGIN};
 #[cfg(test)]
 use crate::model::*;
 #[cfg(test)]
-use crate::scenario::mvp_preset;
+use crate::scenario::ScenarioConfig;
 #[cfg(test)]
 use crate::*;
 #[cfg(test)]
@@ -99,7 +99,7 @@ pub fn create_city(
 /// Returns the UnitId.
 #[cfg(test)]
 pub fn create_unit(state: &mut GameState, owner: PlayerId, kind: UnitKind, tile: TileId) -> UnitId {
-    let def = unit_def(kind);
+    let def = kind.def();
     let id = state.alloc_unit_id();
     state.units.push(Unit {
         id,
@@ -122,7 +122,7 @@ pub fn create_unit_with_hp(
     tile: TileId,
     hp: u32,
 ) -> UnitId {
-    let def = unit_def(kind);
+    let def = kind.def();
     let id = state.alloc_unit_id();
     state.units.push(Unit {
         id,
@@ -143,7 +143,7 @@ pub fn create_unit_with_hp(
 /// - One Human player with default resources
 #[cfg(test)]
 pub fn minimal_state() -> GameState {
-    let cfg = mvp_preset();
+    let cfg = ScenarioConfig::mvp_preset();
     let mut s = GameState::new(cfg, 1);
     let radius = s.scenario.map_radius as u32;
     allocate_hex_grid(&mut s, radius);
@@ -208,7 +208,8 @@ pub fn unit_tile(state: &GameState, unit: UnitId) -> TileId {
 pub fn neighbor_tile_in_map(state: &GameState, tile: TileId) -> TileId {
     let coord = state.tiles[tile.0 as usize].coord;
     let radius = state.scenario.map_radius as u32;
-    let n = coord.neighbors()
+    let n = coord
+        .neighbors()
         .into_iter()
         .find(|h| h.in_map(radius))
         .unwrap_or(coord);
@@ -264,7 +265,7 @@ impl GameStateBuilder {
     /// Create a new builder with default settings (MVP preset, seed=1, Human player).
     pub fn new() -> Self {
         Self {
-            config: mvp_preset(),
+            config: ScenarioConfig::mvp_preset(),
             seed: 1,
             player_kind: PlayerKind::Human,
             player_resources: Stockpiles {

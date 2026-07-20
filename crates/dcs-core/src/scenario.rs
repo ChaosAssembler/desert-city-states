@@ -122,151 +122,178 @@ impl Default for ScenarioConfig {
     }
 }
 
-/// Minimal "vertical slice" preset for Phase 1 development: a small, fast,
-/// single-victory-condition game.
-pub fn mvp_preset() -> ScenarioConfig {
-    ScenarioConfig {
-        map_radius: 4,
-        player_count: 3,
-        turn_limit: 30,
-        ai_personalities: vec![AiPersonality::Expansionist, AiPersonality::Raider],
-        oasis_majority_pct: 50,
-        wealth_score_target: 200,
-        relic_count: 1,
-        relic_hold_turns: 6,
-        symmetry: false,
-        seed: 0,
-        victories_enabled: vec![VictoryKind::OasisDominance],
+impl ScenarioConfig {
+    /// Minimal "vertical slice" preset for Phase 1 development: a small, fast,
+    /// single-victory-condition game.
+    pub fn mvp_preset() -> ScenarioConfig {
+        ScenarioConfig {
+            map_radius: 4,
+            player_count: 3,
+            turn_limit: 30,
+            ai_personalities: vec![AiPersonality::Expansionist, AiPersonality::Raider],
+            oasis_majority_pct: 50,
+            wealth_score_target: 200,
+            relic_count: 1,
+            relic_hold_turns: 6,
+            symmetry: false,
+            seed: 0,
+            victories_enabled: vec![VictoryKind::OasisDominance],
+        }
     }
-}
 
-// ---------------------------------------------------------------------------
-// Load
-// ---------------------------------------------------------------------------
+    /// Load a [`ScenarioConfig`] from a JSON file on disk.
+    ///
+    /// `toml` is not a crate dependency, so configuration files are JSON (parsed
+    /// via `serde_json`, which *is* available). The on-disk format is a partial
+    /// override map: any field present in the file overwrites the corresponding
+    /// field on a base config, while absent fields keep their base value (including
+    /// `victories_enabled`, which therefore defaults to "all three" rather than an
+    /// empty list).
+    ///
+    /// The base config is [`Default`] unless the file contains `"preset": "mvp"`,
+    /// in which case [`ScenarioConfig::mvp_preset`] is used as the base.
+    ///
+    /// After merging, [`ScenarioConfig::scale_thresholds`] and [`ScenarioConfig::validate`] are applied; any
+    /// validation error is returned.
+    pub fn load(path: &std::path::Path) -> Result<ScenarioConfig, ScenarioError> {
+        let raw = std::fs::read_to_string(path).map_err(ScenarioError::Io)?;
+        let value: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| ScenarioError::Parse(e.to_string()))?;
 
-/// Load a [`ScenarioConfig`] from a JSON file on disk.
-///
-/// `toml` is not a crate dependency, so configuration files are JSON (parsed
-/// via `serde_json`, which *is* available). The on-disk format is a partial
-/// override map: any field present in the file overwrites the corresponding
-/// field on a base config, while absent fields keep their base value (including
-/// `victories_enabled`, which therefore defaults to "all three" rather than an
-/// empty list).
-///
-/// The base config is [`Default`] unless the file contains `"preset": "mvp"`,
-/// in which case [`mvp_preset`] is used as the base.
-///
-/// After merging, [`scale_thresholds`] and [`validate`] are applied; any
-/// validation error is returned.
-pub fn load(path: &std::path::Path) -> Result<ScenarioConfig, ScenarioError> {
-    let raw = std::fs::read_to_string(path).map_err(ScenarioError::Io)?;
-    let value: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|e| ScenarioError::Parse(e.to_string()))?;
+        let obj = value
+            .as_object()
+            .ok_or_else(|| ScenarioError::Parse("top-level JSON must be an object".into()))?;
 
-    let obj = value
-        .as_object()
-        .ok_or_else(|| ScenarioError::Parse("top-level JSON must be an object".into()))?;
+        // Choose the base config. A `preset` key of "mvp" selects the MVP preset;
+        // anything else (or absence) falls back to Default.
+        let use_mvp = obj
+            .get("preset")
+            .and_then(|v| v.as_str())
+            .map(|s| s == "mvp")
+            .unwrap_or(false);
+        let mut cfg = if use_mvp {
+            Self::mvp_preset()
+        } else {
+            Default::default()
+        };
 
-    // Choose the base config. A `preset` key of "mvp" selects the MVP preset;
-    // anything else (or absence) falls back to Default.
-    let use_mvp = obj
-        .get("preset")
-        .and_then(|v| v.as_str())
-        .map(|s| s == "mvp")
-        .unwrap_or(false);
-    let mut cfg = if use_mvp {
-        mvp_preset()
-    } else {
-        Default::default()
-    };
+        // Helper: if the key is present, deserialize just that field and overwrite.
+        let apply = |key: &str, setter: &mut dyn FnMut(serde_json::Value)| {
+            if let Some(v) = obj.get(key) {
+                setter(v.clone());
+            }
+        };
 
-    // Helper: if the key is present, deserialize just that field and overwrite.
-    let apply = |key: &str, setter: &mut dyn FnMut(serde_json::Value)| {
-        if let Some(v) = obj.get(key) {
-            setter(v.clone());
-        }
-    };
+        apply("map_radius", &mut |v| {
+            if let Ok(x) = serde_json::from_value::<u8>(v) {
+                cfg.map_radius = x;
+            }
+        });
+        apply("player_count", &mut |v| {
+            if let Ok(x) = serde_json::from_value::<u8>(v) {
+                cfg.player_count = x;
+            }
+        });
+        apply("turn_limit", &mut |v| {
+            if let Ok(x) = serde_json::from_value::<u32>(v) {
+                cfg.turn_limit = x;
+            }
+        });
+        apply("ai_personalities", &mut |v| {
+            if let Ok(x) = serde_json::from_value::<Vec<AiPersonality>>(v) {
+                cfg.ai_personalities = x;
+            }
+        });
+        apply("oasis_majority_pct", &mut |v| {
+            if let Ok(x) = serde_json::from_value::<u8>(v) {
+                cfg.oasis_majority_pct = x;
+            }
+        });
+        apply("wealth_score_target", &mut |v| {
+            if let Ok(x) = serde_json::from_value::<u32>(v) {
+                cfg.wealth_score_target = x;
+            }
+        });
+        apply("relic_count", &mut |v| {
+            if let Ok(x) = serde_json::from_value::<u8>(v) {
+                cfg.relic_count = x;
+            }
+        });
+        apply("relic_hold_turns", &mut |v| {
+            if let Ok(x) = serde_json::from_value::<u32>(v) {
+                cfg.relic_hold_turns = x;
+            }
+        });
+        apply("victories_enabled", &mut |v| {
+            if let Ok(x) = serde_json::from_value::<Vec<VictoryKind>>(v) {
+                cfg.victories_enabled = x;
+            }
+        });
+        apply("symmetry", &mut |v| {
+            if let Ok(x) = serde_json::from_value::<bool>(v) {
+                cfg.symmetry = x;
+            }
+        });
+        apply("seed", &mut |v| {
+            if let Ok(x) = serde_json::from_value::<u64>(v) {
+                cfg.seed = x;
+            }
+        });
 
-    apply("map_radius", &mut |v| {
-        if let Ok(x) = serde_json::from_value::<u8>(v) {
-            cfg.map_radius = x;
-        }
-    });
-    apply("player_count", &mut |v| {
-        if let Ok(x) = serde_json::from_value::<u8>(v) {
-            cfg.player_count = x;
-        }
-    });
-    apply("turn_limit", &mut |v| {
-        if let Ok(x) = serde_json::from_value::<u32>(v) {
-            cfg.turn_limit = x;
-        }
-    });
-    apply("ai_personalities", &mut |v| {
-        if let Ok(x) = serde_json::from_value::<Vec<AiPersonality>>(v) {
-            cfg.ai_personalities = x;
-        }
-    });
-    apply("oasis_majority_pct", &mut |v| {
-        if let Ok(x) = serde_json::from_value::<u8>(v) {
-            cfg.oasis_majority_pct = x;
-        }
-    });
-    apply("wealth_score_target", &mut |v| {
-        if let Ok(x) = serde_json::from_value::<u32>(v) {
-            cfg.wealth_score_target = x;
-        }
-    });
-    apply("relic_count", &mut |v| {
-        if let Ok(x) = serde_json::from_value::<u8>(v) {
-            cfg.relic_count = x;
-        }
-    });
-    apply("relic_hold_turns", &mut |v| {
-        if let Ok(x) = serde_json::from_value::<u32>(v) {
-            cfg.relic_hold_turns = x;
-        }
-    });
-    apply("victories_enabled", &mut |v| {
-        if let Ok(x) = serde_json::from_value::<Vec<VictoryKind>>(v) {
-            cfg.victories_enabled = x;
-        }
-    });
-    apply("symmetry", &mut |v| {
-        if let Ok(x) = serde_json::from_value::<bool>(v) {
-            cfg.symmetry = x;
-        }
-    });
-    apply("seed", &mut |v| {
-        if let Ok(x) = serde_json::from_value::<u64>(v) {
-            cfg.seed = x;
-        }
-    });
+        cfg.scale_thresholds();
+        cfg.validate()?;
+        Ok(cfg)
+    }
 
-    scale_thresholds(&mut cfg);
-    validate(&cfg)?;
-    Ok(cfg)
-}
+    /// Linearly scale balance thresholds based on map size and player count so that
+    /// smaller / lower-player games remain winnable in a reasonable number of turns.
+    pub fn scale_thresholds(&mut self) {
+        let size_factor = (self.map_radius as f32 / 7.0).clamp(0.5, 1.0);
+        let pct_factor = (self.player_count as f32 / 4.0).clamp(0.5, 1.0);
 
-// ---------------------------------------------------------------------------
-// Threshold scaling
-// ---------------------------------------------------------------------------
+        self.wealth_score_target = (200.0 * size_factor * pct_factor).round().max(50.0) as u32;
+        self.relic_count = if self.map_radius < 6 || self.player_count <= 2 {
+            1
+        } else {
+            2
+        };
+        self.relic_hold_turns = if self.map_radius < 6 { 6 } else { 10 };
+        self.turn_limit = (self.turn_limit as f32 * lerp(size_factor, 1.0, 0.5)).max(20.0) as u32;
+        // oasis_majority_pct is intentionally left untouched (stays >= 50).
+    }
 
-/// Linearly scale balance thresholds based on map size and player count so that
-/// smaller / lower-player games remain winnable in a reasonable number of turns.
-pub fn scale_thresholds(cfg: &mut ScenarioConfig) {
-    let size_factor = (cfg.map_radius as f32 / 7.0).clamp(0.5, 1.0);
-    let pct_factor = (cfg.player_count as f32 / 4.0).clamp(0.5, 1.0);
-
-    cfg.wealth_score_target = (200.0 * size_factor * pct_factor).round().max(50.0) as u32;
-    cfg.relic_count = if cfg.map_radius < 6 || cfg.player_count <= 2 {
-        1
-    } else {
-        2
-    };
-    cfg.relic_hold_turns = if cfg.map_radius < 6 { 6 } else { 10 };
-    cfg.turn_limit = (cfg.turn_limit as f32 * lerp(size_factor, 1.0, 0.5)).max(20.0) as u32;
-    // oasis_majority_pct is intentionally left untouched (stays >= 50).
+    /// Validate a [`ScenarioConfig`] against the hard constraints of the engine.
+    ///
+    /// Returns [`Ok`] if every constraint holds, otherwise the first failing
+    /// [`ScenarioError`].
+    pub fn validate(&self) -> Result<(), ScenarioError> {
+        if !(4..=9).contains(&self.map_radius) {
+            return Err(ScenarioError::BadRadius);
+        }
+        if !(2..=4).contains(&self.player_count) {
+            return Err(ScenarioError::BadPlayerCount);
+        }
+        if self.ai_personalities.len() != (self.player_count - 1) as usize {
+            return Err(ScenarioError::PersonalityMismatch(
+                self.ai_personalities.len(),
+                self.player_count,
+            ));
+        }
+        if !(50..=100).contains(&self.oasis_majority_pct) {
+            return Err(ScenarioError::BadMajority);
+        }
+        if self.turn_limit == 0 {
+            return Err(ScenarioError::BadTurnLimit);
+        }
+        // world-gen creates a small fixed budget of ruins (~2-3); cap relic_count.
+        if self.relic_count as usize > 3 {
+            return Err(ScenarioError::TooManyRelics);
+        }
+        if self.victories_enabled.is_empty() {
+            return Err(ScenarioError::NoVictories);
+        }
+        Ok(())
+    }
 }
 
 /// Linear interpolation: `a` when `t == 0`, `b` when `t == 1`.
@@ -301,39 +328,6 @@ pub enum ScenarioError {
     Parse(String),
 }
 
-/// Validate a [`ScenarioConfig`] against the hard constraints of the engine.
-///
-/// Returns [`Ok`] if every constraint holds, otherwise the first failing
-/// [`ScenarioError`].
-pub fn validate(cfg: &ScenarioConfig) -> Result<(), ScenarioError> {
-    if !(4..=9).contains(&cfg.map_radius) {
-        return Err(ScenarioError::BadRadius);
-    }
-    if !(2..=4).contains(&cfg.player_count) {
-        return Err(ScenarioError::BadPlayerCount);
-    }
-    if cfg.ai_personalities.len() != (cfg.player_count - 1) as usize {
-        return Err(ScenarioError::PersonalityMismatch(
-            cfg.ai_personalities.len(),
-            cfg.player_count,
-        ));
-    }
-    if !(50..=100).contains(&cfg.oasis_majority_pct) {
-        return Err(ScenarioError::BadMajority);
-    }
-    if cfg.turn_limit == 0 {
-        return Err(ScenarioError::BadTurnLimit);
-    }
-    // world-gen creates a small fixed budget of ruins (~2-3); cap relic_count.
-    if cfg.relic_count as usize > 3 {
-        return Err(ScenarioError::TooManyRelics);
-    }
-    if cfg.victories_enabled.is_empty() {
-        return Err(ScenarioError::NoVictories);
-    }
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -345,13 +339,13 @@ mod tests {
     #[test]
     fn default_validates_ok() {
         let cfg = ScenarioConfig::default();
-        assert!(validate(&cfg).is_ok(), "Default should validate");
+        assert!(cfg.validate().is_ok(), "Default should validate");
     }
 
     #[test]
     fn mvp_preset_validates_ok() {
-        let cfg = mvp_preset();
-        assert!(validate(&cfg).is_ok(), "MVP preset should validate");
+        let cfg = ScenarioConfig::mvp_preset();
+        assert!(cfg.validate().is_ok(), "MVP preset should validate");
     }
 
     #[test]
@@ -369,7 +363,7 @@ mod tests {
             seed: 0,
             victories_enabled: vec![VictoryKind::OasisDominance],
         };
-        scale_thresholds(&mut cfg);
+        cfg.scale_thresholds();
         assert_eq!(cfg.relic_count, 1);
         assert_eq!(cfg.relic_hold_turns, 6);
         assert!(cfg.wealth_score_target < 200);
@@ -379,7 +373,7 @@ mod tests {
     #[test]
     fn scale_thresholds_full_game_unchanged() {
         let mut cfg = ScenarioConfig::default();
-        scale_thresholds(&mut cfg);
+        cfg.scale_thresholds();
         assert_eq!(cfg.relic_count, 2);
         assert_eq!(cfg.relic_hold_turns, 10);
         assert_eq!(cfg.wealth_score_target, 200);
@@ -392,7 +386,7 @@ mod tests {
             player_count: 1,
             ..Default::default()
         };
-        let result = validate(&cfg);
+        let result = cfg.validate();
         assert!(
             matches!(result, Err(ScenarioError::BadPlayerCount)),
             "expected BadPlayerCount, got {:?}",
@@ -406,7 +400,7 @@ mod tests {
             map_radius: 3,
             ..Default::default()
         };
-        let result = validate(&cfg);
+        let result = cfg.validate();
         assert!(
             matches!(result, Err(ScenarioError::BadRadius)),
             "expected BadRadius, got {:?}",
@@ -421,7 +415,7 @@ mod tests {
             ai_personalities: vec![AiPersonality::Expansionist],
             ..Default::default()
         };
-        let result = validate(&cfg);
+        let result = cfg.validate();
         assert!(
             matches!(result, Err(ScenarioError::PersonalityMismatch(1, 3))),
             "expected PersonalityMismatch(1, 3), got {:?}",
@@ -435,7 +429,7 @@ mod tests {
             oasis_majority_pct: 40,
             ..Default::default()
         };
-        let result = validate(&cfg);
+        let result = cfg.validate();
         assert!(
             matches!(result, Err(ScenarioError::BadMajority)),
             "expected BadMajority, got {:?}",
@@ -449,7 +443,7 @@ mod tests {
             turn_limit: 0,
             ..Default::default()
         };
-        let result = validate(&cfg);
+        let result = cfg.validate();
         assert!(
             matches!(result, Err(ScenarioError::BadTurnLimit)),
             "expected BadTurnLimit, got {:?}",
@@ -469,7 +463,7 @@ mod tests {
         let file = std::env::temp_dir().join("dcs_test_scenario_load.json");
         std::fs::write(&file, &json).unwrap();
 
-        let loaded = load(&file).expect("load should succeed");
+        let loaded = ScenarioConfig::load(&file).expect("load should succeed");
         assert_eq!(loaded.map_radius, 7);
         assert_eq!(loaded.player_count, 4);
         // After scale_thresholds (identity at size_factor 1.0) the value is kept.
@@ -505,7 +499,7 @@ mod tests {
         let file = std::env::temp_dir().join("dcs_test_scenario_nodefault.json");
         std::fs::write(&file, json).unwrap();
 
-        let loaded = load(&file).expect("load should succeed");
+        let loaded = ScenarioConfig::load(&file).expect("load should succeed");
         // Absent victories_enabled must keep the Default (all three), not empty.
         assert_eq!(
             loaded.victories_enabled,
@@ -522,7 +516,7 @@ mod tests {
 
     #[test]
     fn serde_round_trip_mvp_preset() {
-        let cfg = mvp_preset();
+        let cfg = ScenarioConfig::mvp_preset();
         let json = serde_json::to_string(&cfg).unwrap();
         let back: ScenarioConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(cfg, back);

@@ -46,6 +46,24 @@ macro_rules! id_newtype {
             Serialize, Deserialize, PartialOrd, Ord, Default,
         )]
         pub struct $name(pub u32);
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+
+        impl From<$name> for u32 {
+            fn from(id: $name) -> Self {
+                id.0
+            }
+        }
+
+        impl From<$name> for usize {
+            fn from(id: $name) -> Self {
+                id.0 as usize
+            }
+        }
     };
 }
 
@@ -136,6 +154,65 @@ pub enum VictoryKind {
     RelicHold,
     /// Timed-out fallback label for turn-limit games.
     TurnLimit,
+}
+
+// ---------------------------------------------------------------------------
+// Display implementations for catalog enums
+// ---------------------------------------------------------------------------
+
+impl std::fmt::Display for UnitKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Scout => write!(f, "Scout"),
+            Self::CaravanGuard => write!(f, "CaravanGuard"),
+            Self::Raider => write!(f, "Raider"),
+        }
+    }
+}
+
+impl std::fmt::Display for BuildingKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Well => write!(f, "Well"),
+            Self::Market => write!(f, "Market"),
+            Self::Granary => write!(f, "Granary"),
+            Self::Watchtower => write!(f, "Watchtower"),
+            Self::Caravanserai => write!(f, "Caravanserai"),
+            Self::Temple => write!(f, "Temple"),
+        }
+    }
+}
+
+impl std::fmt::Display for CitySpecialization {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TradeHub => write!(f, "TradeHub"),
+            Self::WellFort => write!(f, "WellFort"),
+            Self::Fortress => write!(f, "Fortress"),
+            Self::ScholarOutpost => write!(f, "ScholarOutpost"),
+        }
+    }
+}
+
+impl std::fmt::Display for RouteStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Active => write!(f, "Active"),
+            Self::Threatened => write!(f, "Threatened"),
+            Self::Severed => write!(f, "Severed"),
+        }
+    }
+}
+
+impl std::fmt::Display for VictoryKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OasisDominance => write!(f, "OasisDominance"),
+            Self::WealthScore => write!(f, "WealthScore"),
+            Self::RelicHold => write!(f, "RelicHold"),
+            Self::TurnLimit => write!(f, "TurnLimit"),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -301,6 +378,135 @@ pub enum GameEvent {
     },
     /// A non-fatal warning message.
     Warn { message: String },
+}
+
+// ---------------------------------------------------------------------------
+// Display implementations for RejectReason and GameEvent
+// ---------------------------------------------------------------------------
+
+impl std::fmt::Display for RejectReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotYourUnit => write!(f, "Unit does not belong to you"),
+            Self::OffMap => write!(f, "Target tile is off the map"),
+            Self::NotOasis => write!(f, "Tile is not an oasis"),
+            Self::IllegalTarget => write!(f, "Illegal target for this command"),
+            Self::NoResource => write!(f, "Required resource is unavailable"),
+            Self::Blocked => write!(f, "Path or action is blocked"),
+            Self::OutOfMoves => write!(f, "Unit has no moves remaining"),
+            Self::NotYourTurn => write!(f, "It is not your turn"),
+            Self::InvalidState => write!(f, "Invalid game state for this command"),
+        }
+    }
+}
+
+impl std::fmt::Display for GameEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnitMoved { unit, from, to } => {
+                write!(f, "Unit {} moved from {} to {}", unit, from, to)
+            }
+            Self::CityFounded { city, owner, tile } => {
+                write!(f, "City {} founded by {} on tile {}", city, owner, tile)
+            }
+            Self::UnitTrained { unit, city } => {
+                write!(f, "Unit {} trained in city {}", unit, city)
+            }
+            Self::Built { city, building } => {
+                write!(f, "{} built in city {}", building, city)
+            }
+            Self::Specialized { city, spec } => {
+                write!(f, "City {} specialized to {}", city, spec)
+            }
+            Self::RouteCreated {
+                route,
+                from,
+                to,
+                path: _,
+            } => {
+                write!(f, "Route {} created from {} to {}", route, from, to)
+            }
+            Self::RouteStatusChanged {
+                route,
+                old_status,
+                status,
+            } => {
+                write!(
+                    f,
+                    "Route {} status changed from {} to {}",
+                    route, old_status, status
+                )
+            }
+            Self::UnitPatrolled { unit, tile } => {
+                write!(f, "Unit {} patrolling tile {}", unit, tile)
+            }
+            Self::UnitGarrisoned { unit, city } => {
+                write!(f, "Unit {} garrisoned in city {}", unit, city)
+            }
+            Self::RouteRaided { route, by, severed } => {
+                write!(
+                    f,
+                    "Route {} raided by {}{}",
+                    route,
+                    by,
+                    if *severed { " (severed)" } else { "" }
+                )
+            }
+            Self::CityRaided { city, by, pop_lost } => {
+                write!(f, "City {} raided by {} (lost {} pop)", city, by, pop_lost)
+            }
+            Self::Combat {
+                attacker,
+                defender,
+                attacker_loss,
+                defender_loss,
+                retreated,
+            } => {
+                write!(
+                    f,
+                    "Combat: {} vs {} (losses: {} vs {}{})",
+                    attacker,
+                    defender,
+                    attacker_loss,
+                    defender_loss,
+                    if *retreated { ", retreated" } else { "" }
+                )
+            }
+            Self::Income {
+                player,
+                water,
+                wealth,
+                influence,
+            } => {
+                write!(
+                    f,
+                    "Income for {}: water={}, wealth={}, influence={}",
+                    player, water, wealth, influence
+                )
+            }
+            Self::Grown { city, population } => {
+                write!(f, "City {} grew to {} population", city, population)
+            }
+            Self::Starved { city, population } => {
+                write!(f, "City {} starved ({} remaining)", city, population)
+            }
+            Self::Revealed { player, tiles } => {
+                write!(f, "Revealed {} tiles to {}", tiles.len(), player)
+            }
+            Self::Victory { kind, winner } => {
+                write!(f, "{} victory for player {}", kind, winner)
+            }
+            Self::TurnAdvanced { turn } => {
+                write!(f, "Turn advanced to {}", turn)
+            }
+            Self::Rejected { command, reason } => {
+                write!(f, "Command {:?} rejected: {}", command, reason)
+            }
+            Self::Warn { message } => {
+                write!(f, "Warning: {}", message)
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
