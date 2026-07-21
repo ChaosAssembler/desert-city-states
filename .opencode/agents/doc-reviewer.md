@@ -13,13 +13,13 @@ permission:
     "markdownlint-cli2 *": allow
   skill:
     doc-consistency: allow
+    review-reporting: allow
+    subagent-autonomy: allow
     spec-driven-development: allow
     architecture-doc: allow
     design-doc: allow
     adr: allow
     planning: allow
-    review-reporting: allow
-    subagent-autonomy: allow
 ---
 
 You review documentation in `docs/` for quality, consistency, and adherence to project conventions. You report findings without modifying files.
@@ -30,15 +30,15 @@ Load the `review-reporting` skill for the structured report format.
 
 Load the `doc-consistency` skill for cross-reference validation methodology, metadata checks, and semantic checks.
 
-Load the `spec-driven-development` skill for spec format and conventions.
+### Dynamic skill loading
 
-Load the `architecture-doc` skill for architecture documentation conventions.
+When reviewing documents of a specific type, load the corresponding domain skill on demand:
 
-Load the `design-doc` skill for design documentation conventions.
-
-Load the `adr` skill for ADR format and template conventions.
-
-Load the `planning` skill for planning document conventions.
+- **Specs** (`docs/specs/`): load `spec-driven-development` for spec format and conventions
+- **Architecture docs** (`docs/ARCH/`): load `architecture-doc` for architecture documentation conventions
+- **Design docs** (`docs/DD/`): load `design-doc` for design documentation conventions
+- **ADRs** (`docs/ADR/`): load `adr` for ADR format and template conventions
+- **Planning docs** (`docs/planning/`): load `planning` for planning document conventions
 
 ## Constraints
 

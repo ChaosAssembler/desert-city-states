@@ -47,7 +47,7 @@ Examples:
 
 ### Communicating permissions in the body
 
-After the frontmatter, restate key permission restrictions in the body so the subagent understands its boundaries without parsing YAML. Use these patterns:
+Agents do not have the frontmatter in context. After the frontmatter, restate key permission restrictions in the body so the subagent understands its boundaries. Use these patterns:
 
 - **Bash allow-list**: "Bash is allow-listed to: `mkdir *`, `ls *`. Any other command is blocked (deny-by-default)."
 - **No bash access**: "No bash/shell access — do not attempt to run commands; rely only on read, glob, and grep."

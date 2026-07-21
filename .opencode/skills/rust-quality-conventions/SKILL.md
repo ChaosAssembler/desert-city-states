@@ -3,7 +3,7 @@ name: rust-quality-conventions
 description: Use when writing or reviewing Rust code in this project — enforces quality standards for tests, style, documentation, validation, error handling, and performance
 ---
 
-# Skill: rust-quality-conventions
+# Rust Quality Conventions
 
 Quality conventions for the Desert City-States Rust codebase. These rules apply to all code written or reviewed in this project.
 

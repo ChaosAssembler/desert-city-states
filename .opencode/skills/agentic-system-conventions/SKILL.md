@@ -76,7 +76,7 @@ description: <"Use when..." phrasing>
 
 ## Architecture
 
-- **Orchestrators** (plan, build) delegate broadly to specialists via the task tool. They do not modify files directly. They load `delegation-guide` and have unrestricted `task` permission.
+- **Orchestrators** delegate broadly to specialists via the task tool and do not modify files directly. They load `delegation-guide`. The **build** agent is the general orchestrator with unrestricted `task` permission. The **plan** agent is a read-only orchestrator with scoped `task` permissions (naming specific agents). Other orchestration subagents may be even more constrained.
 - **Specialists** execute within their scoped domain. Each loads `subagent-autonomy` and its domain skill. Most specialists do not delegate further.
 - **Delegating specialists** are specialists that also delegate one specific subtask to a dedicated sub-subagent. They have narrowly-scoped `task` permission (allowing only the specific agent they need) and load both `subagent-autonomy` and `delegation-guide`. This is not orchestration — it is limited delegation for a single capability the specialist does not own.
 - **Consultant** loads skills on demand to provide expert guidance on the correct approach. Orchestrators consult it frequently.

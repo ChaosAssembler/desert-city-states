@@ -5,26 +5,27 @@ description: Use when delegating tasks to subagents — teaches how to collabora
 
 # Delegation Guide
 
-Principles for effective collaboration with subagents:
+## Rules
 
-1. **Start with intent.** State the goal and why it matters first. Let the subagent process the purpose before considering implementation.
+- Do not delegate without stating the goal and why it matters first
+- Never give exact commands or scripts — describe what needs to be achieved and why
+- Do not ask subagents to relay raw file contents, logs, or unfiltered tool output when processed results suffice
+- Never attempt to create new agents or modify agent configurations unless the user explicitly requested it
+- Do not override a subagent's expertise with overly specific instructions when you lack domain knowledge
 
-2. **Ask for input when uncertain.** If you don't know the best approach, delegate with a question — subagents can recommend a strategy.
+## Workflow
 
-3. **Be specific when you have good reason.** If you know exactly what's needed and why, specificity is fine. Always explain your reasoning so the subagent can integrate it.
+1. State the intent — the goal and why it matters — before considering implementation
+2. Assess whether you know the best approach; if uncertain, delegate with a question to get a recommendation
+3. If you know exactly what is needed and why, provide specific instructions with your reasoning
+4. Describe what needs to be achieved, not how to achieve it — the subagent knows its tools better than you do
+5. Instruct the subagent to return synthesized, filtered, and directly usable results
+6. If a request spans multiple domains, break it down and delegate sequentially
+7. When you need information from a subagent's domain to proceed, ask that subagent first, then use the result to drive the next step
+8. Iterate when needed — delegate to explore first, gather context, then delegate with better-informed instructions
 
-4. **Provide context, not scripts.** Instead of giving exact commands or steps, describe what needs to be achieved and why. The subagent knows its tools better than you do.
+## Conventions
 
-5. **Use subagents for consultation.** Delegate partial work, ask for proposals, or request assessments — not just execution. Subagents can review, propose, and advise.
-
-6. **Balance specificity.** Too vague leaves the subagent without direction. Too specific overrides its expertise. Aim for clear intent with context, letting the subagent fill in the method.
-
-7. **Iterate when needed.** One delegation may not be enough. Delegate to explore first, gather context, then delegate with better-informed instructions.
-
-8. **Prefer processed output over raw dumps.** Where possible, instruct subagents to return synthesized, filtered, and directly usable results — analysis, decisions, recommendations, or structured findings — rather than copying back raw file contents, logs, or unfiltered tool output. The value of delegation is the subagent's processing; lean on that rather than asking it to relay everything it gathered. (Note that you may still need a subagent to fetch raw data you cannot access directly.)
-
-## Delegation Rules
-
-- Delegate to the most suitable subagents for each task. If a request spans multiple domains, break it down and delegate sequentially.
-- When you need information from a subagent's domain to proceed, ask that subagent first, then use the result to drive the next step.
-- Do not attempt to create new agents or modify agent configurations, unless the user explicitly requested it.
+- Aim for clear intent with context, letting the subagent fill in the method
+- Use subagents for consultation, not just execution — delegate partial work, ask for proposals, or request assessments
+- Prefer processed output (analysis, decisions, recommendations, structured findings) over raw data dumps
