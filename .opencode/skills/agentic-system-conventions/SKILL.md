@@ -103,3 +103,8 @@ Constraint sections use imperative voice (no subject):
 
 If a rule exists in a skill file, don't repeat it in the agent constraints. Agent constraints define scope. Skill rules define methodology. Duplication creates maintenance burden and confusion.
 - Agent and skill files must stay generic: reference project conventions and docs rather than duplicating their specific rules or examples. Link to the source doc instead of restating its contents.
+
+## Writing Style
+
+- Clear, concise language; no unnecessary repetition; no unclear statements.
+- No obvious explanations; no unneeded elaborations or examples.

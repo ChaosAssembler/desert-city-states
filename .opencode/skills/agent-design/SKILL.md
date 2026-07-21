@@ -10,11 +10,8 @@ description: Use when creating or maintaining OpenCode agent files under .openco
 - One clearly defined purpose per agent (Single Responsibility Principle)
 - Agents do not have permissions they do not need (least privilege)
 - No overlap with already-defined agents — check existing agents first
-- Clear, concise language; no redundancies; no unclear statements
-- No obvious explanations, no unneeded elaborations or examples
 - Constraints in agent files define scope only — no behavioral rules (those live in skills)
 - No redundancy with skill files — if a rule is in the skill, don't repeat it in the agent
-- Use imperative voice in constraint sections (no subject)
 - A delegating specialist uses `mode: subagent` with narrowly-scoped `task` permission naming the specific agent. Never grant open `task: allow` to a subagent — that makes it an orchestrator.
 
 ## Workflow

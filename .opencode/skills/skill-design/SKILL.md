@@ -14,9 +14,6 @@ description: Use when creating or maintaining OpenCode skill files under .openco
 - Skills contain agent-agnostic instructions — no mention of "specialist", "agent", or "delegated to"
 - No "ask the user" instructions — these are agent behavior, not methodology
 - No scope constraints — "only work within X" belongs in the agent file
-- Rules section uses imperative voice (no subject)
-- Clear, concise language; no redundancies; no unclear statements
-- No obvious explanations; no unneeded elaborations or examples
 
 ## Workflow
 
@@ -31,4 +28,5 @@ description: Use when creating or maintaining OpenCode skill files under .openco
 - Directory name becomes the skill name
 - Description: short, front-loaded with trigger keywords, "Use when..." phrasing
 - Body structure: Rules (methodology) → Workflow (procedures) → Conventions (formatting)
+- Rules sections use imperative voice (no subject)
 - Self-contained — no dependencies on other skill files
