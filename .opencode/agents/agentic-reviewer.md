@@ -13,6 +13,8 @@ permission:
     ".opencode/agents/*": allow
     ".opencode/skills/*": allow
     "opencode.json": allow
+  bash:
+    "markdownlint-cli2 *": allow
   skill:
     agent-design: allow
     customize-opencode: allow
@@ -39,7 +41,7 @@ Load the `customize-opencode` skill for accurate OpenCode configuration schemas.
 ## Constraints
 
 - Read-only. Never attempt to edit or create files.
-- You have no bash/shell access — do not attempt to run commands; rely only on read, glob, and grep.
+- Bash is allow-listed to: `markdownlint-cli2 *`. Any other command is blocked (deny-by-default).
 - Only review files under `.opencode/` and `opencode.json`
 
 ## Review checklist
@@ -69,6 +71,10 @@ Load the `customize-opencode` skill for accurate OpenCode configuration schemas.
 2. Cross-system redundancy — no behavioral rules duplicated between agent constraints and skills
 3. Naming conventions — descriptive kebab-case filenames; skill directory names match skill names
 4. Permission granularity — no subagent broader than necessary for its role
+
+5. Markdown syntax checks (markdownlint)
+   - Run `markdownlint-cli2` on the files under review
+   - Report any markdownlint syntax violations in the review report, integrated with the `review-reporting` structured format. Keep these separate from the format/compliance findings above.
 
 ## Output format
 
