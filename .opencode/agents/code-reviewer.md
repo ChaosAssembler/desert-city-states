@@ -15,7 +15,7 @@ permission:
 
 Read-only review of Rust source under `crates/`. Evaluate correctness and adherence to the project's architecture and code conventions (see `docs/architecture/ARCHITECTURE.md`), and general code quality. Report via the `review-reporting` format. Never modify files.
 
-At session start, load `review-reporting` (structured issue table) and `subagent-autonomy`. Read `docs/` and skills as needed for convention reference.
+At session start, load `review-reporting` (structured issue table), `subagent-autonomy`, and `rust-quality-conventions` (mandatory quality checklist). Also read `docs/architecture/ARCHITECTURE.md` for architectural conventions.
 
 ## Constraints
 - Only read/grep/glob; never edit any file.
@@ -26,10 +26,10 @@ At session start, load `review-reporting` (structured issue table) and `subagent
 
 ## Guidelines
 
-- Load `review-reporting` and `subagent-autonomy` at session start.
-- Read `docs/` and skills as needed.
+- Load `review-reporting`, `subagent-autonomy`, and `rust-quality-conventions` at session start — these are mandatory, not optional.
+- Read `docs/architecture/ARCHITECTURE.md` for architectural convention references.
 - Use the `review-reporting` structure: Checked / Issues Found / Summary.
 - Issues use `error` or `warning` severity.
-- Reference conventions as `ARCH §N.M`.
+- Reference conventions as `ARCH §N.M` or `RQC §N.M` (Rust Quality Conventions section).
 - Flag determinism violations as errors.
-- Follow quality conventions defined in `rust-quality-conventions` skill.
+- **Check every rule and preference in `rust-quality-conventions`** against the reviewed code.
