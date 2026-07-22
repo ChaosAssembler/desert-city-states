@@ -382,6 +382,21 @@ fn handle_observe(
     // Collect the player's discovered tile IDs for the client.
     let discovered_tiles: Vec<u32> = player.discovered.iter().map(|t| t.0).collect();
 
+    // Build routes array — visible trade routes (fog-of-war filtered).
+    let routes: Vec<serde_json::Value> = game
+        .routes
+        .iter()
+        .filter(|r| game.is_route_visible(observer, r.id))
+        .map(|route| {
+            serde_json::json!({
+                "route_id": route.id.0,
+                "from": route.endpoints.0 .0,
+                "to": route.endpoints.1 .0,
+                "status": route.status.to_string(),
+            })
+        })
+        .collect();
+
     // Build the observation payload.
     let observation = serde_json::json!({
         "turn": game.turn,
@@ -397,6 +412,7 @@ fn handle_observe(
         "discovered_tiles": discovered_tiles,
         "cities": cities,
         "units": units,
+        "routes": routes,
         "legal_actions": legal_actions,
     });
 
