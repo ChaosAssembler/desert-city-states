@@ -403,8 +403,9 @@ fn handle_observe(
 /// resulting turn info and any errors.
 ///
 /// Currently supports [`CommandInput::EndTurn`], [`CommandInput::MoveUnit`],
-/// [`CommandInput::FoundCity`], [`CommandInput::Build`], and
-/// [`CommandInput::TrainUnit`]. Other command variants will be added in
+/// [`CommandInput::FoundCity`], [`CommandInput::Build`],
+/// [`CommandInput::TrainUnit`], [`CommandInput::Patrol`], and
+/// [`CommandInput::RaidCity`]. Other command variants will be added in
 /// later waves.
 fn handle_act(
     state: &mut ServeState,
@@ -551,6 +552,32 @@ fn handle_act(
                 core_commands.push(Command::Build {
                     city: CityId(*city),
                     building: building_kind,
+                });
+            }
+            CommandInput::Patrol { unit, tile } => {
+                let unit_id = match unit {
+                    Some(id) => UnitId(*id),
+                    None => {
+                        errors.push("Patrol requires a unit_id".into());
+                        continue;
+                    }
+                };
+                core_commands.push(Command::Patrol {
+                    unit: unit_id,
+                    tile: TileId(*tile),
+                });
+            }
+            CommandInput::RaidCity { unit, city } => {
+                let unit_id = match unit {
+                    Some(id) => UnitId(*id),
+                    None => {
+                        errors.push("RaidCity requires a unit_id".into());
+                        continue;
+                    }
+                };
+                core_commands.push(Command::RaidCity {
+                    unit: unit_id,
+                    city: CityId(*city),
                 });
             }
             other => {
