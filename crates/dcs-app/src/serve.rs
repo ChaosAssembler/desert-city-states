@@ -12,7 +12,9 @@
 
 use crate::protocol::*;
 use dcs_core::hex::HexCoord;
-use dcs_core::{Command, GameState, PlayerId, ScenarioConfig, TerrainType, TileId, UnitId, UnitKind};
+use dcs_core::{
+    Command, GameEvent, GameState, PlayerId, ScenarioConfig, TerrainType, TileId, UnitId, UnitKind,
+};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
@@ -501,14 +503,25 @@ fn handle_act(
     }
 
     // Execute the supported commands through the turn engine.
+    let mut output_events = Vec::new();
+    let mut victory_info = None;
+
     if !core_commands.is_empty() {
-        let _events = game.step(&core_commands);
-        // Game events are intentionally not mapped to EventOutput yet.
-        // They will be converted in a later wave.
+        let events = game.step(&core_commands);
+        for event in &events {
+            // Extract Victory info for the top-level field.
+            if let GameEvent::Victory { kind, winner } = event {
+                victory_info = Some(VictoryInfo {
+                    kind: kind.to_string(),
+                    winner: winner.0,
+                });
+            }
+            output_events.push(game_event_to_output(event));
+        }
     }
 
-    // Return the current turn state and any errors from unsupported commands.
-    Response::events(game.turn, Vec::new(), None, errors)
+    // Return the current turn state, events, and any errors from unsupported commands.
+    Response::events(game.turn, output_events, victory_info, errors)
 }
 
 // ---------------------------------------------------------------------------
@@ -525,6 +538,144 @@ fn ensure_game(state: &ServeState) -> Result<&GameState, Response> {
             "unknown",
         )
     })
+}
+
+/// Convert a core [`GameEvent`] into a wire-format [`EventOutput`].
+///
+/// Uses snake_case event type names and flattens the event fields into
+/// a `serde_json::Value` payload. The mapping is straightforward since
+/// `GameEvent` already derives `Serialize`.
+fn game_event_to_output(event: &GameEvent) -> EventOutput {
+    let (event_type, data) = match event {
+        GameEvent::UnitMoved { unit, from, to } => (
+            "unit_moved",
+            serde_json::json!({ "unit": unit.0, "from": from.0, "to": to.0 }),
+        ),
+        GameEvent::CityFounded { city, owner, tile } => (
+            "city_founded",
+            serde_json::json!({ "city": city.0, "owner": owner.0, "tile": tile.0 }),
+        ),
+        GameEvent::UnitTrained { unit, city } => (
+            "unit_trained",
+            serde_json::json!({ "unit": unit.0, "city": city.0 }),
+        ),
+        GameEvent::Built { city, building } => (
+            "building_built",
+            serde_json::json!({ "city": city.0, "building": building.to_string() }),
+        ),
+        GameEvent::Specialized { city, spec } => (
+            "city_specialized",
+            serde_json::json!({ "city": city.0, "specialization": spec.to_string() }),
+        ),
+        GameEvent::RouteCreated {
+            route,
+            from,
+            to,
+            path,
+        } => (
+            "route_created",
+            serde_json::json!({
+                "route": route.0,
+                "from": from.0,
+                "to": to.0,
+                "path": path.iter().map(|t| t.0).collect::<Vec<_>>(),
+            }),
+        ),
+        GameEvent::RouteStatusChanged {
+            route,
+            old_status,
+            status,
+        } => (
+            "route_status_changed",
+            serde_json::json!({
+                "route": route.0,
+                "old_status": old_status.to_string(),
+                "status": status.to_string(),
+            }),
+        ),
+        GameEvent::UnitPatrolled { unit, tile } => (
+            "unit_patrolled",
+            serde_json::json!({ "unit": unit.0, "tile": tile.0 }),
+        ),
+        GameEvent::UnitGarrisoned { unit, city } => (
+            "unit_garrisoned",
+            serde_json::json!({ "unit": unit.0, "city": city.0 }),
+        ),
+        GameEvent::RouteRaided { route, by, severed } => (
+            "route_raided",
+            serde_json::json!({ "route": route.0, "by": by.0, "severed": severed }),
+        ),
+        GameEvent::CityRaided { city, by, pop_lost } => (
+            "city_raided",
+            serde_json::json!({ "city": city.0, "by": by.0, "pop_lost": pop_lost }),
+        ),
+        GameEvent::Combat {
+            attacker,
+            defender,
+            attacker_loss,
+            defender_loss,
+            retreated,
+        } => (
+            "combat",
+            serde_json::json!({
+                "attacker": attacker.0,
+                "defender": defender.0,
+                "attacker_loss": attacker_loss,
+                "defender_loss": defender_loss,
+                "retreated": retreated,
+            }),
+        ),
+        GameEvent::Income {
+            player,
+            water,
+            wealth,
+            influence,
+        } => (
+            "income",
+            serde_json::json!({
+                "player": player.0,
+                "water": water,
+                "wealth": wealth,
+                "influence": influence,
+            }),
+        ),
+        GameEvent::Grown { city, population } => (
+            "city_grew",
+            serde_json::json!({ "city": city.0, "population": population }),
+        ),
+        GameEvent::Starved { city, population } => (
+            "city_starved",
+            serde_json::json!({ "city": city.0, "population": population }),
+        ),
+        GameEvent::Revealed { player, tiles } => (
+            "tiles_revealed",
+            serde_json::json!({
+                "player": player.0,
+                "tiles": tiles.iter().map(|t| t.0).collect::<Vec<_>>(),
+            }),
+        ),
+        GameEvent::Victory { kind, winner } => (
+            "victory",
+            serde_json::json!({ "kind": kind.to_string(), "winner": winner.0 }),
+        ),
+        GameEvent::TurnAdvanced { turn } => (
+            "turn_advanced",
+            serde_json::json!({ "turn": turn }),
+        ),
+        GameEvent::Rejected { command, reason } => (
+            "rejected",
+            serde_json::json!({ "command": format!("{command:?}"), "reason": reason.to_string() }),
+        ),
+        GameEvent::Warn { message } => (
+            "warn",
+            serde_json::json!({ "message": message }),
+        ),
+    };
+
+    EventOutput {
+        event_type: event_type.to_owned(),
+        data,
+    }
 }
 
 /// Compute the legal actions for a player given the current game state.
