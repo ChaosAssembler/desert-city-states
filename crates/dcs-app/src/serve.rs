@@ -279,20 +279,21 @@ fn handle_claim_player(state: &mut ServeState, player_id: u32, player_name: Opti
 }
 
 // ---------------------------------------------------------------------------
-// Handler: observe (stub)
+// Handler: observe
 // ---------------------------------------------------------------------------
 
-/// Return a placeholder observation response.
+/// Return the current game state for the observing player.
 ///
-/// TODO (wave 3–4): Build a proper observation payload scoped to the player's
-/// fog-of-war view, including tiles, cities, units, resources, and routes.
+/// Provides turn number, current phase, current actor, and the player's
+/// resources. Fog-of-war filtering is deferred to a later wave — this
+/// returns raw game data.
 fn handle_observe(
     state: &mut ServeState,
     player_id: Option<u32>,
     _detail: Option<String>,
 ) -> Response {
     // Validate game is loaded.
-    let _game = match ensure_game(state) {
+    let game = match ensure_game(state) {
         Ok(g) => g,
         Err(resp) => return resp,
     };
@@ -302,14 +303,43 @@ fn handle_observe(
         .or_else(|| state.player_id.map(|p| p.0))
         .unwrap_or(0);
 
-    // Stub: return a minimal placeholder observation.
-    let placeholder = serde_json::json!({
+    // Validate the observing player exists.
+    if observing_player as usize >= game.players.len() {
+        return Response::error(
+            ERR_INVALID_PLAYER,
+            format!(
+                "player_id {observing_player} does not exist (game has {} players)",
+                game.players.len()
+            ),
+            Some(format!(
+                "use a player_id between 0 and {}",
+                game.players.len() - 1
+            )),
+            "observe",
+        );
+    }
+
+    let player = &game.players[observing_player as usize];
+
+    // Determine if it is this player's turn.
+    let is_my_turn = game.current_actor.0 == observing_player;
+
+    // Build the observation payload.
+    let observation = serde_json::json!({
+        "turn": game.turn,
         "player_id": observing_player,
-        "note": "observation payload TBD (wave 3–4)",
+        "current_phase": game.phase.to_string(),
+        "current_actor": game.current_actor.0,
+        "is_my_turn": is_my_turn,
+        "resources": {
+            "water": player.resources.water,
+            "wealth": player.resources.wealth,
+            "influence": player.resources.influence,
+        },
     });
 
     Response::Observation {
-        _placeholder: placeholder,
+        _placeholder: observation,
     }
 }
 
