@@ -11,7 +11,7 @@
 //! ```
 
 use crate::protocol::*;
-use dcs_core::{GameState, PlayerId, ScenarioConfig, TerrainType, UnitKind};
+use dcs_core::{Command, GameState, PlayerId, ScenarioConfig, TerrainType, UnitKind};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
@@ -389,35 +389,104 @@ fn handle_observe(
 }
 
 // ---------------------------------------------------------------------------
-// Handler: act (stub)
+// Handler: act
 // ---------------------------------------------------------------------------
 
-/// Return a placeholder events response.
+/// Execute one or more commands for the acting player's turn.
 ///
-/// TODO (wave 3–4): Validate and execute each command against the game state,
-/// collect the resulting [`GameEvent`]s, and return them as [`EventOutput`]s.
+/// Validates game state and player claim, converts wire [`CommandInput`]s to
+/// core [`Command`]s, runs them through [`GameState::step`], and returns the
+/// resulting turn info and any errors.
+///
+/// Currently supports only the [`CommandInput::EndTurn`] command. Other
+/// command variants will be added in later waves.
 fn handle_act(
     state: &mut ServeState,
     player_id: Option<u32>,
-    _commands: Vec<CommandInput>,
+    commands: Vec<CommandInput>,
 ) -> Response {
-    // Validate game is loaded.
-    let game = match ensure_game(state) {
-        Ok(g) => g,
-        Err(resp) => return resp,
+    // Validate game is loaded. Mutable access is required for `step`.
+    let game = match state.game.as_mut() {
+        Some(g) => g,
+        None => {
+            return Response::error(
+                ERR_GAME_NOT_INITIALIZED,
+                "no game loaded",
+                Some("call new_game or load_game first".into()),
+                "act",
+            );
+        }
     };
 
     // Validate player is claimed.
-    let acting_player = match ensure_player(state) {
-        Ok((pid, _)) => pid,
-        Err(resp) => return resp,
+    let claimed_player = match state.player_id {
+        Some(pid) => pid,
+        None => {
+            return Response::error(
+                ERR_NO_PLAYER_CLAIMED,
+                "no player claimed",
+                Some("call claim_player first".into()),
+                "act",
+            );
+        }
     };
 
-    // Override with explicit player_id if provided.
-    let _effective_player = player_id.unwrap_or(acting_player);
+    // Resolve effective player: explicit player_id overrides the claimed one.
+    let effective_player = player_id.unwrap_or(claimed_player.0);
 
-    // Stub: return empty events with current turn.
-    Response::events(game.turn, Vec::new(), None, Vec::new())
+    // Validate player ID exists in the game.
+    if effective_player as usize >= game.players.len() {
+        return Response::error(
+            ERR_INVALID_PLAYER,
+            format!(
+                "player_id {effective_player} does not exist (game has {} players)",
+                game.players.len()
+            ),
+            Some(format!("use a player_id between 0 and {}", game.players.len() - 1)),
+            "act",
+        );
+    }
+
+    let acting_player = PlayerId(effective_player);
+
+    // Validate it is this player's turn.
+    if game.current_actor != acting_player {
+        return Response::error(
+            ERR_NOT_YOUR_TURN,
+            format!(
+                "it is player {}'s turn, not player {}'s",
+                game.current_actor.0, effective_player
+            ),
+            Some("wait for your turn or use observe to check the current actor".into()),
+            "act",
+        );
+    }
+
+    // Convert wire commands to core commands, collecting unsupported ones as
+    // errors so the client knows which commands were skipped.
+    let mut core_commands = Vec::new();
+    let mut errors = Vec::new();
+
+    for cmd_input in &commands {
+        match cmd_input {
+            CommandInput::EndTurn => {
+                core_commands.push(Command::EndTurn);
+            }
+            other => {
+                errors.push(format!("unsupported command: {other:?}"));
+            }
+        }
+    }
+
+    // Execute the supported commands through the turn engine.
+    if !core_commands.is_empty() {
+        let _events = game.step(&core_commands);
+        // Game events are intentionally not mapped to EventOutput yet.
+        // They will be converted in a later wave.
+    }
+
+    // Return the current turn state and any errors from unsupported commands.
+    Response::events(game.turn, Vec::new(), None, errors)
 }
 
 // ---------------------------------------------------------------------------
@@ -434,21 +503,6 @@ fn ensure_game(state: &ServeState) -> Result<&GameState, Response> {
             "unknown",
         )
     })
-}
-
-/// Ensure both a game and a player are claimed, returning the player ID and
-/// game reference.
-fn ensure_player(state: &ServeState) -> Result<(u32, &GameState), Response> {
-    let game = ensure_game(state)?;
-    let pid = state.player_id.ok_or_else(|| {
-        Response::error(
-            ERR_NO_PLAYER_CLAIMED,
-            "no player claimed",
-            Some("call claim_player first".into()),
-            "unknown",
-        )
-    })?;
-    Ok((pid.0, game))
 }
 
 /// Compute the legal actions for a player given the current game state.
