@@ -404,9 +404,9 @@ fn handle_observe(
 ///
 /// Currently supports [`CommandInput::EndTurn`], [`CommandInput::MoveUnit`],
 /// [`CommandInput::FoundCity`], [`CommandInput::Build`],
-/// [`CommandInput::TrainUnit`], [`CommandInput::Patrol`], and
-/// [`CommandInput::RaidCity`]. Other command variants will be added in
-/// later waves.
+/// [`CommandInput::TrainUnit`], [`CommandInput::Patrol`],
+/// [`CommandInput::RaidCity`], and [`CommandInput::ConnectRoute`].
+/// Other command variants will be added in later waves.
 fn handle_act(
     state: &mut ServeState,
     player_id: Option<u32>,
@@ -578,6 +578,33 @@ fn handle_act(
                 core_commands.push(Command::RaidCity {
                     unit: unit_id,
                     city: CityId(*city),
+                });
+            }
+            CommandInput::ConnectRoute { from, to } => {
+                let from_city = match from {
+                    Some(id) => CityId(*id),
+                    None => {
+                        // Pick the first city owned by the acting player.
+                        match game
+                            .cities
+                            .iter()
+                            .find(|c| c.owner == acting_player)
+                        {
+                            Some(city) => city.id,
+                            None => {
+                                errors.push(
+                                    "ConnectRoute requires a from city or at least one owned city"
+                                        .into(),
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                };
+                let to_city = CityId(*to);
+                core_commands.push(Command::ConnectRoute {
+                    from: from_city,
+                    to: to_city,
                 });
             }
             other => {
