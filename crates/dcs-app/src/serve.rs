@@ -284,9 +284,9 @@ fn handle_claim_player(state: &mut ServeState, player_id: u32, player_name: Opti
 
 /// Return the current game state for the observing player.
 ///
-/// Provides turn number, current phase, current actor, and the player's
-/// resources. Fog-of-war filtering is deferred to a later wave — this
-/// returns raw game data.
+/// Provides turn number, current phase, current actor, the player's
+/// resources, cities, and units. Fog-of-war filtering is deferred to a
+/// later wave — this returns raw game data.
 fn handle_observe(
     state: &mut ServeState,
     player_id: Option<u32>,
@@ -324,6 +324,45 @@ fn handle_observe(
     // Determine if it is this player's turn.
     let is_my_turn = game.current_actor.0 == observing_player;
 
+    // Build cities array for the observing player.
+    let cities: Vec<serde_json::Value> = game
+        .cities
+        .iter()
+        .filter(|c| c.owner.0 == observing_player)
+        .map(|city| {
+            let tile = &game.tiles[city.tile.0 as usize];
+            serde_json::json!({
+                "city_id": city.id.0,
+                "name": format!("City {}", city.id.0 + 1),
+                "population": city.population,
+                "production_capacity": city.building_slots(),
+                "tile": {
+                    "q": tile.coord.q,
+                    "r": tile.coord.r,
+                },
+            })
+        })
+        .collect();
+
+    // Build units array for the observing player.
+    let units: Vec<serde_json::Value> = game
+        .units
+        .iter()
+        .filter(|u| u.owner.0 == observing_player)
+        .map(|unit| {
+            let tile = &game.tiles[unit.tile.0 as usize];
+            serde_json::json!({
+                "unit_id": unit.id.0,
+                "unit_type": unit.kind.to_string(),
+                "tile": {
+                    "q": tile.coord.q,
+                    "r": tile.coord.r,
+                },
+                "hp": unit.hp,
+            })
+        })
+        .collect();
+
     // Build the observation payload.
     let observation = serde_json::json!({
         "turn": game.turn,
@@ -336,6 +375,8 @@ fn handle_observe(
             "wealth": player.resources.wealth,
             "influence": player.resources.influence,
         },
+        "cities": cities,
+        "units": units,
     });
 
     Response::Observation {
