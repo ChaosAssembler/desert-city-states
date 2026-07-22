@@ -13,7 +13,8 @@
 use crate::protocol::*;
 use dcs_core::hex::HexCoord;
 use dcs_core::{
-    Command, GameEvent, GameState, PlayerId, ScenarioConfig, TerrainType, TileId, UnitId, UnitKind,
+    BuildingKind, CityId, Command, GameEvent, GameState, PlayerId, ScenarioConfig, TerrainType,
+    TileId, UnitId, UnitKind,
 };
 use std::io::{self, BufRead, Write};
 use std::path::Path;
@@ -402,7 +403,8 @@ fn handle_observe(
 /// resulting turn info and any errors.
 ///
 /// Currently supports [`CommandInput::EndTurn`], [`CommandInput::MoveUnit`],
-/// and [`CommandInput::FoundCity`]. Other command variants will be added in
+/// [`CommandInput::FoundCity`], [`CommandInput::Build`], and
+/// [`CommandInput::TrainUnit`]. Other command variants will be added in
 /// later waves.
 fn handle_act(
     state: &mut ServeState,
@@ -516,6 +518,39 @@ fn handle_act(
                 core_commands.push(Command::FoundCity {
                     unit: UnitId(*unit),
                     tile: tile_id,
+                });
+            }
+            CommandInput::TrainUnit { city, kind } => {
+                let unit_kind = match kind.as_str() {
+                    "Scout" => UnitKind::Scout,
+                    "CaravanGuard" => UnitKind::CaravanGuard,
+                    "Raider" => UnitKind::Raider,
+                    other => {
+                        errors.push(format!("unknown unit kind: {other}"));
+                        continue;
+                    }
+                };
+                core_commands.push(Command::TrainUnit {
+                    city: CityId(*city),
+                    kind: unit_kind,
+                });
+            }
+            CommandInput::Build { city, building } => {
+                let building_kind = match building.as_str() {
+                    "Well" => BuildingKind::Well,
+                    "Market" => BuildingKind::Market,
+                    "Granary" => BuildingKind::Granary,
+                    "Watchtower" => BuildingKind::Watchtower,
+                    "Caravanserai" => BuildingKind::Caravanserai,
+                    "Temple" => BuildingKind::Temple,
+                    other => {
+                        errors.push(format!("unknown building kind: {other}"));
+                        continue;
+                    }
+                };
+                core_commands.push(Command::Build {
+                    city: CityId(*city),
+                    building: building_kind,
                 });
             }
             other => {
