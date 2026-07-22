@@ -11,7 +11,8 @@
 //! ```
 
 use crate::protocol::*;
-use dcs_core::{Command, GameState, PlayerId, ScenarioConfig, TerrainType, UnitKind};
+use dcs_core::hex::HexCoord;
+use dcs_core::{Command, GameState, PlayerId, ScenarioConfig, TerrainType, TileId, UnitId, UnitKind};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
@@ -398,8 +399,8 @@ fn handle_observe(
 /// core [`Command`]s, runs them through [`GameState::step`], and returns the
 /// resulting turn info and any errors.
 ///
-/// Currently supports only the [`CommandInput::EndTurn`] command. Other
-/// command variants will be added in later waves.
+/// Currently supports [`CommandInput::EndTurn`] and [`CommandInput::MoveUnit`].
+/// Other command variants will be added in later waves.
 fn handle_act(
     state: &mut ServeState,
     player_id: Option<u32>,
@@ -471,6 +472,27 @@ fn handle_act(
         match cmd_input {
             CommandInput::EndTurn => {
                 core_commands.push(Command::EndTurn);
+            }
+            CommandInput::MoveUnit { unit, to } => {
+                let to_tile = match to {
+                    TileCoord::Id(id) => TileId(*id),
+                    TileCoord::Hex { q, r } => {
+                        let coord = HexCoord { q: *q, r: *r };
+                        match game.tile_index.get(&coord) {
+                            Some(&tile_id) => tile_id,
+                            None => {
+                                errors.push(format!(
+                                    "unknown tile coordinate ({q}, {r})"
+                                ));
+                                continue;
+                            }
+                        }
+                    }
+                };
+                core_commands.push(Command::MoveUnit {
+                    unit: UnitId(*unit),
+                    to: to_tile,
+                });
             }
             other => {
                 errors.push(format!("unsupported command: {other:?}"));
