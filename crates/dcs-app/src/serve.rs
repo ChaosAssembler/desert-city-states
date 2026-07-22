@@ -289,8 +289,9 @@ fn handle_claim_player(state: &mut ServeState, player_id: u32, player_name: Opti
 /// Return the current game state for the observing player.
 ///
 /// Provides turn number, current phase, current actor, the player's
-/// resources, cities, and units. Fog-of-war filtering is deferred to a
-/// later wave — this returns raw game data.
+/// resources, cities, and units. Fog-of-war filtering is applied:
+/// only tiles in the player's `discovered` set are visible, and
+/// only units/cities on those tiles (or owned by the player) are shown.
 fn handle_observe(
     state: &mut ServeState,
     player_id: Option<u32>,
@@ -328,16 +329,21 @@ fn handle_observe(
     // Determine if it is this player's turn.
     let is_my_turn = game.current_actor.0 == observing_player;
 
-    // Build cities array for the observing player.
+    let observer = PlayerId(observing_player);
+
+    // Build cities array — own cities plus visible enemy cities (fog-of-war).
     let cities: Vec<serde_json::Value> = game
         .cities
         .iter()
-        .filter(|c| c.owner.0 == observing_player)
+        .filter(|c| {
+            c.owner == observer || game.is_city_visible(observer, c.id)
+        })
         .map(|city| {
             let tile = &game.tiles[city.tile.0 as usize];
             serde_json::json!({
                 "city_id": city.id.0,
                 "name": format!("City {}", city.id.0 + 1),
+                "owner": city.owner.0,
                 "population": city.population,
                 "production_capacity": city.building_slots(),
                 "tile": {
@@ -348,16 +354,19 @@ fn handle_observe(
         })
         .collect();
 
-    // Build units array for the observing player.
+    // Build units array — own units plus visible enemy units (fog-of-war).
     let units: Vec<serde_json::Value> = game
         .units
         .iter()
-        .filter(|u| u.owner.0 == observing_player)
+        .filter(|u| {
+            u.owner == observer || game.is_unit_visible(observer, u.id)
+        })
         .map(|unit| {
             let tile = &game.tiles[unit.tile.0 as usize];
             serde_json::json!({
                 "unit_id": unit.id.0,
                 "unit_type": unit.kind.to_string(),
+                "owner": unit.owner.0,
                 "tile": {
                     "q": tile.coord.q,
                     "r": tile.coord.r,
@@ -368,7 +377,10 @@ fn handle_observe(
         .collect();
 
     // Compute legal actions for the observing player.
-    let legal_actions = compute_legal_actions(game, PlayerId(observing_player));
+    let legal_actions = compute_legal_actions(game, observer);
+
+    // Collect the player's discovered tile IDs for the client.
+    let discovered_tiles: Vec<u32> = player.discovered.iter().map(|t| t.0).collect();
 
     // Build the observation payload.
     let observation = serde_json::json!({
@@ -382,6 +394,7 @@ fn handle_observe(
             "wealth": player.resources.wealth,
             "influence": player.resources.influence,
         },
+        "discovered_tiles": discovered_tiles,
         "cities": cities,
         "units": units,
         "legal_actions": legal_actions,
