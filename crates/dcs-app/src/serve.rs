@@ -401,8 +401,9 @@ fn handle_observe(
 /// core [`Command`]s, runs them through [`GameState::step`], and returns the
 /// resulting turn info and any errors.
 ///
-/// Currently supports [`CommandInput::EndTurn`] and [`CommandInput::MoveUnit`].
-/// Other command variants will be added in later waves.
+/// Currently supports [`CommandInput::EndTurn`], [`CommandInput::MoveUnit`],
+/// and [`CommandInput::FoundCity`]. Other command variants will be added in
+/// later waves.
 fn handle_act(
     state: &mut ServeState,
     player_id: Option<u32>,
@@ -494,6 +495,27 @@ fn handle_act(
                 core_commands.push(Command::MoveUnit {
                     unit: UnitId(*unit),
                     to: to_tile,
+                });
+            }
+            CommandInput::FoundCity { unit, tile } => {
+                let tile_id = match tile {
+                    TileCoord::Id(id) => TileId(*id),
+                    TileCoord::Hex { q, r } => {
+                        let coord = HexCoord { q: *q, r: *r };
+                        match game.tile_index.get(&coord) {
+                            Some(&tile_id) => tile_id,
+                            None => {
+                                errors.push(format!(
+                                    "unknown tile coordinate ({q}, {r})"
+                                ));
+                                continue;
+                            }
+                        }
+                    }
+                };
+                core_commands.push(Command::FoundCity {
+                    unit: UnitId(*unit),
+                    tile: tile_id,
                 });
             }
             other => {
