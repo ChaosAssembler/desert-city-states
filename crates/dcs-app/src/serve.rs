@@ -11,7 +11,7 @@
 //! ```
 
 use crate::protocol::*;
-use dcs_core::{GameState, PlayerId, ScenarioConfig};
+use dcs_core::{GameState, PlayerId, ScenarioConfig, TerrainType, UnitKind};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
@@ -363,6 +363,9 @@ fn handle_observe(
         })
         .collect();
 
+    // Compute legal actions for the observing player.
+    let legal_actions = compute_legal_actions(game, PlayerId(observing_player));
+
     // Build the observation payload.
     let observation = serde_json::json!({
         "turn": game.turn,
@@ -377,6 +380,7 @@ fn handle_observe(
         },
         "cities": cities,
         "units": units,
+        "legal_actions": legal_actions,
     });
 
     Response::Observation {
@@ -445,4 +449,78 @@ fn ensure_player(state: &ServeState) -> Result<(u32, &GameState), Response> {
         )
     })?;
     Ok((pid.0, game))
+}
+
+/// Compute the legal actions for a player given the current game state.
+///
+/// Returns a list of command name strings that the player can execute right now.
+/// This is a simplified MVP check — it does not validate full preconditions
+/// (e.g. resource costs), only whether the player has the prerequisite entities.
+fn compute_legal_actions(game: &GameState, player_id: PlayerId) -> Vec<String> {
+    let mut actions = Vec::new();
+    let is_my_turn = game.current_actor == player_id;
+
+    // Collect the player's units and cities once for reuse.
+    let player_units: Vec<_> = game.units.iter().filter(|u| u.owner == player_id).collect();
+    let player_cities: Vec<_> = game.cities.iter().filter(|c| c.owner == player_id).collect();
+
+    // end_turn: always available when it's the player's turn.
+    if is_my_turn {
+        actions.push("end_turn".into());
+    }
+
+    // move_unit: available if the player has any units.
+    if !player_units.is_empty() {
+        actions.push("move_unit".into());
+    }
+
+    // found_city: available if the player has a scout on an oasis tile
+    // that doesn't already have a city.
+    let has_founding_scout = player_units.iter().any(|u| {
+        u.kind == UnitKind::Scout
+            && u.moves_left > 0
+            && game.tiles[u.tile.0 as usize].terrain == TerrainType::Oasis
+            && !game.cities.iter().any(|c| c.tile == u.tile)
+    });
+    if has_founding_scout {
+        actions.push("found_city".into());
+    }
+
+    // build: available if the player has cities with free building slots.
+    let has_buildable_city = player_cities.iter().any(|c| {
+        let slots = c.building_slots();
+        (c.buildings.len() as u8) < slots
+    });
+    if has_buildable_city {
+        actions.push("build".into());
+    }
+
+    // train_unit: available if the player has cities (population >= 1).
+    if player_cities.iter().any(|c| c.population >= 1) {
+        actions.push("train_unit".into());
+    }
+
+    // patrol: available if the player has CaravanGuard units.
+    if player_units.iter().any(|u| u.kind == UnitKind::CaravanGuard) {
+        actions.push("patrol".into());
+    }
+
+    // garrison: available if the player has CaravanGuard units and cities.
+    if player_units.iter().any(|u| u.kind == UnitKind::CaravanGuard)
+        && !player_cities.is_empty()
+    {
+        actions.push("garrison".into());
+    }
+
+    // raid: available if the player has Raider units.
+    if player_units.iter().any(|u| u.kind == UnitKind::Raider) {
+        actions.push("raid".into());
+    }
+
+    // connect_route: available if the player has 2+ cities.
+    if player_cities.len() >= 2 {
+        actions.push("connect_route".into());
+    }
+
+    actions
 }
