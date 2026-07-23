@@ -414,6 +414,18 @@ pub const ERR_NOT_YOUR_TURN: &str = "not_your_turn";
 pub const ERR_INVALID_PLAYER: &str = "invalid_player";
 /// A command failed validation.
 pub const ERR_INVALID_COMMAND: &str = "invalid_command";
+/// A referenced unit ID does not exist or is not owned by the acting player.
+pub const ERR_INVALID_UNIT: &str = "invalid_unit";
+/// A referenced city ID does not exist or is not owned by the acting player.
+pub const ERR_INVALID_CITY: &str = "invalid_city";
+/// A tile coordinate does not correspond to any map tile.
+pub const ERR_INVALID_TILE: &str = "invalid_tile";
+/// The player does not have enough resources to perform the action.
+pub const ERR_INSUFFICIENT_RESOURCES: &str = "insufficient_resources";
+/// The game is not in a phase that allows this action.
+pub const ERR_WRONG_PHASE: &str = "wrong_phase";
+/// The unit has already used all its moves this turn.
+pub const ERR_NO_MOVES_LEFT: &str = "no_moves_left";
 /// The `"type"` field in a request was not recognised.
 pub const ERR_UNKNOWN_TYPE: &str = "unknown_type";
 /// A scenario file could not be parsed.

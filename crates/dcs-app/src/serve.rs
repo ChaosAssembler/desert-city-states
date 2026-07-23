@@ -12,12 +12,25 @@
 
 use crate::protocol::*;
 use dcs_core::hex::HexCoord;
+use dcs_core::model::{BUILD_COST, UNIT_TRAIN_COST};
 use dcs_core::{
-    BuildingKind, CityId, Command, GameEvent, GameState, PlayerId, ScenarioConfig,
-    TileId, UnitId, UnitKind,
+    BuildingKind, BuildingKindExt, CityId, Command, GameEvent, GameState, PlayerId,
+    ScenarioConfig, TileId, UnitId, UnitKind, UnitKindExt,
 };
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+
+// ---------------------------------------------------------------------------
+// Act-error helper
+// ---------------------------------------------------------------------------
+
+/// A structured error from command conversion, carrying a code, message, and
+/// optional hint so agents know *why* an action failed and *what* to do next.
+struct ActError {
+    code: &'static str,
+    message: String,
+    hint: Option<String>,
+}
 
 // ---------------------------------------------------------------------------
 // Server state
@@ -496,7 +509,7 @@ impl ServeState {
         }
 
         // Convert wire commands to core commands.
-        let (core_commands, errors) = convert_commands(&commands, game, acting_player);
+        let (core_commands, act_errors) = convert_commands(&commands, game, acting_player);
 
         // Execute the supported commands through the turn engine.
         let mut output_events = Vec::new();
@@ -515,6 +528,17 @@ impl ServeState {
                 output_events.push(game_event_to_output(event));
             }
         }
+
+        // Format ActErrors into human-readable error strings with hints.
+        let errors: Vec<String> = act_errors
+            .iter()
+            .map(|e| {
+                match &e.hint {
+                    Some(hint) => format!("[{}] {} — hint: {}", e.code, e.message, hint),
+                    None => format!("[{}] {}", e.code, e.message),
+                }
+            })
+            .collect();
 
         // Return the current turn state, events, and any errors from unsupported commands.
         Response::events(game.turn, output_events, victory_info, errors)
@@ -571,13 +595,14 @@ pub fn run_serve() -> io::Result<()> {
 
 /// Convert wire [`CommandInput`]s to core [`Command`]s.
 ///
-/// Returns the list of valid core commands and any error messages for
-/// unsupported or malformed commands.
+/// Returns the list of valid core commands and any [`ActError`]s for
+/// unsupported or malformed commands. Each error carries a code, message,
+/// and optional hint so agents know why an action failed and what to do next.
 fn convert_commands(
     commands: &[CommandInput],
     game: &GameState,
     acting_player: PlayerId,
-) -> (Vec<Command>, Vec<String>) {
+) -> (Vec<Command>, Vec<ActError>) {
     let mut core_commands = Vec::new();
     let mut errors = Vec::new();
 
@@ -587,6 +612,26 @@ fn convert_commands(
                 core_commands.push(Command::EndTurn);
             }
             CommandInput::MoveUnit { unit, to } => {
+                // Validate the unit exists and is owned by the acting player.
+                let unit_exists = game.units.iter().any(|u| u.id == UnitId(*unit) && u.owner == acting_player);
+                if !unit_exists {
+                    errors.push(ActError {
+                        code: ERR_INVALID_UNIT,
+                        message: format!("unit {unit} does not exist or is not yours"),
+                        hint: Some("call observe to list your units and their IDs".into()),
+                    });
+                    continue;
+                }
+                // Validate the unit has moves remaining.
+                let unit_data = game.units.iter().find(|u| u.id == UnitId(*unit)).unwrap();
+                if unit_data.moves_left == 0 {
+                    errors.push(ActError {
+                        code: ERR_NO_MOVES_LEFT,
+                        message: format!("unit {unit} has no moves left this turn"),
+                        hint: Some("units get 1 move per turn; end your turn and wait for the next one".into()),
+                    });
+                    continue;
+                }
                 let to_tile = match to {
                     TileCoord::Id(id) => TileId(*id),
                     TileCoord::Hex { q, r } => {
@@ -594,9 +639,11 @@ fn convert_commands(
                         match game.tile_index.get(&coord) {
                             Some(&tile_id) => tile_id,
                             None => {
-                                errors.push(format!(
-                                    "unknown tile coordinate ({q}, {r})"
-                                ));
+                                errors.push(ActError {
+                                    code: ERR_INVALID_TILE,
+                                    message: format!("unknown tile coordinate ({q}, {r})"),
+                                    hint: Some("use observe to see valid tile coordinates (q, r) or tile IDs".into()),
+                                });
                                 continue;
                             }
                         }
@@ -608,6 +655,16 @@ fn convert_commands(
                 });
             }
             CommandInput::FoundCity { unit, tile } => {
+                // Validate the unit exists and is owned by the acting player.
+                let unit_exists = game.units.iter().any(|u| u.id == UnitId(*unit) && u.owner == acting_player);
+                if !unit_exists {
+                    errors.push(ActError {
+                        code: ERR_INVALID_UNIT,
+                        message: format!("unit {unit} does not exist or is not yours"),
+                        hint: Some("call observe to list your units and their IDs".into()),
+                    });
+                    continue;
+                }
                 let tile_id = match tile {
                     TileCoord::Id(id) => TileId(*id),
                     TileCoord::Hex { q, r } => {
@@ -615,9 +672,11 @@ fn convert_commands(
                         match game.tile_index.get(&coord) {
                             Some(&tile_id) => tile_id,
                             None => {
-                                errors.push(format!(
-                                    "unknown tile coordinate ({q}, {r})"
-                                ));
+                                errors.push(ActError {
+                                    code: ERR_INVALID_TILE,
+                                    message: format!("unknown tile coordinate ({q}, {r})"),
+                                    hint: Some("use observe to see valid tile coordinates (q, r) or tile IDs".into()),
+                                });
                                 continue;
                             }
                         }
@@ -629,21 +688,63 @@ fn convert_commands(
                 });
             }
             CommandInput::TrainUnit { city, kind } => {
+                // Validate the city exists and is owned by the acting player.
+                let city_exists = game.cities.iter().any(|c| c.id == CityId(*city) && c.owner == acting_player);
+                if !city_exists {
+                    errors.push(ActError {
+                        code: ERR_INVALID_CITY,
+                        message: format!("city {city} does not exist or is not yours"),
+                        hint: Some("call observe to list your cities and their IDs".into()),
+                    });
+                    continue;
+                }
                 let unit_kind = match kind.as_str() {
                     "Scout" => UnitKind::Scout,
                     "CaravanGuard" => UnitKind::CaravanGuard,
                     "Raider" => UnitKind::Raider,
                     other => {
-                        errors.push(format!("unknown unit kind: {other}"));
+                        errors.push(ActError {
+                            code: ERR_INVALID_COMMAND,
+                            message: format!("unknown unit kind: {other}"),
+                            hint: Some("valid kinds are: Scout, CaravanGuard, Raider".into()),
+                        });
                         continue;
                     }
                 };
+                // Check that the player has enough wealth.
+                let player = &game.players[acting_player.0 as usize];
+                let cost = UNIT_TRAIN_COST[unit_kind.index()];
+                if player.resources.wealth < cost {
+                    errors.push(ActError {
+                        code: ERR_INSUFFICIENT_RESOURCES,
+                        message: format!(
+                            "not enough wealth to train {kind}: need {cost}, have {}",
+                            player.resources.wealth
+                        ),
+                        hint: Some(
+                            "earn wealth from Market buildings or trade routes; \
+                             end your turn to receive income"
+                                .into(),
+                        ),
+                    });
+                    continue;
+                }
                 core_commands.push(Command::TrainUnit {
                     city: CityId(*city),
                     kind: unit_kind,
                 });
             }
             CommandInput::Build { city, building } => {
+                // Validate the city exists and is owned by the acting player.
+                let city_exists = game.cities.iter().any(|c| c.id == CityId(*city) && c.owner == acting_player);
+                if !city_exists {
+                    errors.push(ActError {
+                        code: ERR_INVALID_CITY,
+                        message: format!("city {city} does not exist or is not yours"),
+                        hint: Some("call observe to list your cities and their IDs".into()),
+                    });
+                    continue;
+                }
                 let building_kind = match building.as_str() {
                     "Well" => BuildingKind::Well,
                     "Market" => BuildingKind::Market,
@@ -652,10 +753,35 @@ fn convert_commands(
                     "Caravanserai" => BuildingKind::Caravanserai,
                     "Temple" => BuildingKind::Temple,
                     other => {
-                        errors.push(format!("unknown building kind: {other}"));
+                        errors.push(ActError {
+                            code: ERR_INVALID_COMMAND,
+                            message: format!("unknown building kind: {other}"),
+                            hint: Some(
+                                "valid kinds are: Well, Market, Granary, Watchtower, Caravanserai, Temple"
+                                    .into(),
+                            ),
+                        });
                         continue;
                     }
                 };
+                // Check that the player has enough resources.
+                let player = &game.players[acting_player.0 as usize];
+                let cost = BUILD_COST[building_kind.index()];
+                if player.resources.wealth < cost {
+                    errors.push(ActError {
+                        code: ERR_INSUFFICIENT_RESOURCES,
+                        message: format!(
+                            "not enough wealth to build {building}: need {cost}, have {}",
+                            player.resources.wealth
+                        ),
+                        hint: Some(
+                            "earn wealth from Market buildings or trade routes; \
+                             end your turn to receive income"
+                                .into(),
+                        ),
+                    });
+                    continue;
+                }
                 core_commands.push(Command::Build {
                     city: CityId(*city),
                     building: building_kind,
@@ -663,9 +789,25 @@ fn convert_commands(
             }
             CommandInput::Patrol { unit, tile } => {
                 let unit_id = match unit {
-                    Some(id) => UnitId(*id),
+                    Some(id) => {
+                        // Validate the unit exists and is owned by the acting player.
+                        let unit_exists = game.units.iter().any(|u| u.id == UnitId(*id) && u.owner == acting_player);
+                        if !unit_exists {
+                            errors.push(ActError {
+                                code: ERR_INVALID_UNIT,
+                                message: format!("unit {id} does not exist or is not yours"),
+                                hint: Some("call observe to list your units and their IDs".into()),
+                            });
+                            continue;
+                        }
+                        UnitId(*id)
+                    }
                     None => {
-                        errors.push("Patrol requires a unit_id".into());
+                        errors.push(ActError {
+                            code: ERR_INVALID_COMMAND,
+                            message: "Patrol requires a unit_id".into(),
+                            hint: Some("include \"unit\": <id> in the command; use observe to find unit IDs".into()),
+                        });
                         continue;
                     }
                 };
@@ -676,9 +818,25 @@ fn convert_commands(
             }
             CommandInput::RaidCity { unit, city } => {
                 let unit_id = match unit {
-                    Some(id) => UnitId(*id),
+                    Some(id) => {
+                        // Validate the unit exists and is owned by the acting player.
+                        let unit_exists = game.units.iter().any(|u| u.id == UnitId(*id) && u.owner == acting_player);
+                        if !unit_exists {
+                            errors.push(ActError {
+                                code: ERR_INVALID_UNIT,
+                                message: format!("unit {id} does not exist or is not yours"),
+                                hint: Some("call observe to list your units and their IDs".into()),
+                            });
+                            continue;
+                        }
+                        UnitId(*id)
+                    }
                     None => {
-                        errors.push("RaidCity requires a unit_id".into());
+                        errors.push(ActError {
+                            code: ERR_INVALID_COMMAND,
+                            message: "RaidCity requires a unit_id".into(),
+                            hint: Some("include \"unit\": <id> in the command; use observe to find unit IDs".into()),
+                        });
                         continue;
                     }
                 };
@@ -689,7 +847,19 @@ fn convert_commands(
             }
             CommandInput::ConnectRoute { from, to } => {
                 let from_city = match from {
-                    Some(id) => CityId(*id),
+                    Some(id) => {
+                        // Validate the city exists and is owned by the acting player.
+                        let city_exists = game.cities.iter().any(|c| c.id == CityId(*id) && c.owner == acting_player);
+                        if !city_exists {
+                            errors.push(ActError {
+                                code: ERR_INVALID_CITY,
+                                message: format!("city {id} does not exist or is not yours"),
+                                hint: Some("call observe to list your cities and their IDs".into()),
+                            });
+                            continue;
+                        }
+                        CityId(*id)
+                    }
                     None => {
                         // Pick the first city owned by the acting player.
                         match game
@@ -699,10 +869,15 @@ fn convert_commands(
                         {
                             Some(city) => city.id,
                             None => {
-                                errors.push(
-                                    "ConnectRoute requires a from city or at least one owned city"
-                                        .into(),
-                                );
+                                errors.push(ActError {
+                                    code: ERR_INVALID_CITY,
+                                    message: "no owned city to use as route origin".into(),
+                                    hint: Some(
+                                        "found a city first, or supply a \"from\" city ID; \
+                                         use observe to list your cities"
+                                            .into(),
+                                    ),
+                                });
                                 continue;
                             }
                         }
@@ -716,9 +891,25 @@ fn convert_commands(
             }
             CommandInput::Garrison { unit, city } => {
                 let unit_id = match unit {
-                    Some(id) => UnitId(*id),
+                    Some(id) => {
+                        // Validate the unit exists and is owned by the acting player.
+                        let unit_exists = game.units.iter().any(|u| u.id == UnitId(*id) && u.owner == acting_player);
+                        if !unit_exists {
+                            errors.push(ActError {
+                                code: ERR_INVALID_UNIT,
+                                message: format!("unit {id} does not exist or is not yours"),
+                                hint: Some("call observe to list your units and their IDs".into()),
+                            });
+                            continue;
+                        }
+                        UnitId(*id)
+                    }
                     None => {
-                        errors.push("Garrison requires a unit_id".into());
+                        errors.push(ActError {
+                            code: ERR_INVALID_COMMAND,
+                            message: "Garrison requires a unit_id".into(),
+                            hint: Some("include \"unit\": <id> in the command; use observe to find unit IDs".into()),
+                        });
                         continue;
                     }
                 };
@@ -728,7 +919,14 @@ fn convert_commands(
                 });
             }
             other => {
-                errors.push(format!("unsupported command: {other:?}"));
+                errors.push(ActError {
+                    code: ERR_INVALID_COMMAND,
+                    message: format!("unsupported command: {other:?}"),
+                    hint: Some(
+                        "supported commands: EndTurn, MoveUnit, FoundCity, TrainUnit, Build, Patrol, RaidCity, ConnectRoute, Garrison"
+                            .into(),
+                    ),
+                });
             }
         }
     }
