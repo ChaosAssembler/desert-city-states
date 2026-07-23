@@ -397,6 +397,24 @@ fn handle_observe(
         })
         .collect();
 
+    // Determine game-over status and winner from the event log.
+    let is_game_over = game.log.iter().any(|e| matches!(e, GameEvent::Victory { .. }));
+    let winner = game
+        .log
+        .iter()
+        .find_map(|e| {
+            if let GameEvent::Victory { winner, .. } = e {
+                Some(winner.0)
+            } else {
+                None
+            }
+        });
+
+    // Extract victory points (prestige score) and oases controlled for this player.
+    let victory_points = game.victory.prestige_score.get(&observer).copied().unwrap_or(0);
+    let oases_controlled = game.victory.oases_controlled.get(&observer).copied().unwrap_or(0);
+    let turn_limit = game.scenario.turn_limit;
+
     // Build the observation payload.
     let observation = serde_json::json!({
         "turn": game.turn,
@@ -404,6 +422,11 @@ fn handle_observe(
         "current_phase": game.phase.to_string(),
         "current_actor": game.current_actor.0,
         "is_my_turn": is_my_turn,
+        "turn_limit": turn_limit,
+        "is_game_over": is_game_over,
+        "winner": winner,
+        "victory_points": victory_points,
+        "oases_controlled": oases_controlled,
         "resources": {
             "water": player.resources.water,
             "wealth": player.resources.wealth,
