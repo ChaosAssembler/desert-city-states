@@ -850,57 +850,60 @@ fn compute_legal_actions(game: &GameState, player_id: PlayerId) -> Vec<String> {
         actions.push("end_turn".into());
     }
 
-    // move_unit: available if the player has any units.
-    if !player_units.is_empty() {
-        actions.push("move_unit".into());
-    }
+    // All other actions are only available when it's the player's turn.
+    if is_my_turn {
+        // move_unit: available if the player has any units.
+        if !player_units.is_empty() {
+            actions.push("move_unit".into());
+        }
 
-    // found_city: available if the player has a scout on an oasis tile
-    // that doesn't already have a city.
-    let has_founding_scout = player_units.iter().any(|u| {
-        u.kind == UnitKind::Scout
-            && u.moves_left > 0
-            && game.tiles[u.tile.0 as usize].terrain == TerrainType::Oasis
-            && !game.cities.iter().any(|c| c.tile == u.tile)
-    });
-    if has_founding_scout {
-        actions.push("found_city".into());
-    }
+        // found_city: available if the player has a scout on an oasis tile
+        // that doesn't already have a city.
+        let has_founding_scout = player_units.iter().any(|u| {
+            u.kind == UnitKind::Scout
+                && u.moves_left > 0
+                && game.tiles[u.tile.0 as usize].terrain == TerrainType::Oasis
+                && !game.cities.iter().any(|c| c.tile == u.tile)
+        });
+        if has_founding_scout {
+            actions.push("found_city".into());
+        }
 
-    // build: available if the player has cities with free building slots.
-    let has_buildable_city = player_cities.iter().any(|c| {
-        let slots = c.building_slots();
-        (c.buildings.len() as u8) < slots
-    });
-    if has_buildable_city {
-        actions.push("build".into());
-    }
+        // build: available if the player has cities with free building slots.
+        let has_buildable_city = player_cities.iter().any(|c| {
+            let slots = c.building_slots();
+            (c.buildings.len() as u8) < slots
+        });
+        if has_buildable_city {
+            actions.push("build".into());
+        }
 
-    // train_unit: available if the player has cities (population >= 1).
-    if player_cities.iter().any(|c| c.population >= 1) {
-        actions.push("train_unit".into());
-    }
+        // train_unit: available if the player has cities (population >= 1).
+        if player_cities.iter().any(|c| c.population >= 1) {
+            actions.push("train_unit".into());
+        }
 
-    // patrol: available if the player has CaravanGuard units.
-    if player_units.iter().any(|u| u.kind == UnitKind::CaravanGuard) {
-        actions.push("patrol".into());
-    }
+        // patrol: available if the player has CaravanGuard units.
+        if player_units.iter().any(|u| u.kind == UnitKind::CaravanGuard) {
+            actions.push("patrol".into());
+        }
 
-    // garrison: available if the player has CaravanGuard units and cities.
-    if player_units.iter().any(|u| u.kind == UnitKind::CaravanGuard)
-        && !player_cities.is_empty()
-    {
-        actions.push("garrison".into());
-    }
+        // garrison: available if the player has CaravanGuard units and cities.
+        if player_units.iter().any(|u| u.kind == UnitKind::CaravanGuard)
+            && !player_cities.is_empty()
+        {
+            actions.push("garrison".into());
+        }
 
-    // raid: available if the player has Raider units.
-    if player_units.iter().any(|u| u.kind == UnitKind::Raider) {
-        actions.push("raid".into());
-    }
+        // raid: available if the player has Raider units.
+        if player_units.iter().any(|u| u.kind == UnitKind::Raider) {
+            actions.push("raid".into());
+        }
 
-    // connect_route: available if the player has 2+ cities.
-    if player_cities.len() >= 2 {
-        actions.push("connect_route".into());
+        // connect_route: available if the player has 2+ cities.
+        if player_cities.len() >= 2 {
+            actions.push("connect_route".into());
+        }
     }
 
     actions
