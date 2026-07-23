@@ -434,7 +434,8 @@ fn handle_observe(
 /// Currently supports [`CommandInput::EndTurn`], [`CommandInput::MoveUnit`],
 /// [`CommandInput::FoundCity`], [`CommandInput::Build`],
 /// [`CommandInput::TrainUnit`], [`CommandInput::Patrol`],
-/// [`CommandInput::RaidCity`], and [`CommandInput::ConnectRoute`].
+/// [`CommandInput::RaidCity`], [`CommandInput::ConnectRoute`],
+/// and [`CommandInput::Garrison`].
 /// Other command variants will be added in later waves.
 fn handle_act(
     state: &mut ServeState,
@@ -634,6 +635,19 @@ fn handle_act(
                 core_commands.push(Command::ConnectRoute {
                     from: from_city,
                     to: to_city,
+                });
+            }
+            CommandInput::Garrison { unit, city } => {
+                let unit_id = match unit {
+                    Some(id) => UnitId(*id),
+                    None => {
+                        errors.push("Garrison requires a unit_id".into());
+                        continue;
+                    }
+                };
+                core_commands.push(Command::Garrison {
+                    unit: unit_id,
+                    city: CityId(*city),
                 });
             }
             other => {
