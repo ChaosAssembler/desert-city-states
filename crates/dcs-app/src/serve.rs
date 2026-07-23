@@ -15,7 +15,7 @@ use dcs_core::hex::HexCoord;
 use dcs_core::model::{BUILD_COST, UNIT_TRAIN_COST};
 use dcs_core::{
     BuildingKind, BuildingKindExt, CityId, Command, GameEvent, GameState, PlayerId,
-    ScenarioConfig, TileId, UnitId, UnitKind, UnitKindExt,
+    RouteId, ScenarioConfig, TileId, UnitId, UnitKind, UnitKindExt,
 };
 use std::io::{self, BufRead, Write};
 use std::path::Path;
@@ -443,8 +443,8 @@ impl ServeState {
     /// Currently supports [`CommandInput::EndTurn`], [`CommandInput::MoveUnit`],
     /// [`CommandInput::FoundCity`], [`CommandInput::Build`],
     /// [`CommandInput::TrainUnit`], [`CommandInput::Patrol`],
-    /// [`CommandInput::RaidCity`], [`CommandInput::ConnectRoute`],
-    /// and [`CommandInput::Garrison`].
+    /// [`CommandInput::RaidCity`], [`CommandInput::RaidRoute`],
+    /// [`CommandInput::ConnectRoute`], and [`CommandInput::Garrison`].
     /// Other command variants will be added in later waves.
     fn handle_act(
         &mut self,
@@ -845,6 +845,44 @@ fn convert_commands(
                     city: CityId(*city),
                 });
             }
+            CommandInput::RaidRoute { unit, route } => {
+                let unit_id = match unit {
+                    Some(id) => {
+                        // Validate the unit exists and is owned by the acting player.
+                        let unit_exists = game.units.iter().any(|u| u.id == UnitId(*id) && u.owner == acting_player);
+                        if !unit_exists {
+                            errors.push(ActError {
+                                code: ERR_INVALID_UNIT,
+                                message: format!("unit {id} does not exist or is not yours"),
+                                hint: Some("call observe to list your units and their IDs".into()),
+                            });
+                            continue;
+                        }
+                        UnitId(*id)
+                    }
+                    None => {
+                        errors.push(ActError {
+                            code: ERR_INVALID_COMMAND,
+                            message: "RaidRoute requires a unit_id".into(),
+                            hint: Some("include \"unit\": <id> in the command; use observe to find unit IDs".into()),
+                        });
+                        continue;
+                    }
+                };
+                // Validate the route exists.
+                if !game.routes.iter().any(|r| r.id == RouteId(*route)) {
+                    errors.push(ActError {
+                        code: ERR_INVALID_ROUTE,
+                        message: format!("route {route} does not exist"),
+                        hint: Some("call observe to list visible routes and their IDs".into()),
+                    });
+                    continue;
+                }
+                core_commands.push(Command::RaidRoute {
+                    unit: unit_id,
+                    route: RouteId(*route),
+                });
+            }
             CommandInput::ConnectRoute { from, to } => {
                 let from_city = match from {
                     Some(id) => {
@@ -923,7 +961,7 @@ fn convert_commands(
                     code: ERR_INVALID_COMMAND,
                     message: format!("unsupported command: {other:?}"),
                     hint: Some(
-                        "supported commands: EndTurn, MoveUnit, FoundCity, TrainUnit, Build, Patrol, RaidCity, ConnectRoute, Garrison"
+                        "supported commands: EndTurn, MoveUnit, FoundCity, TrainUnit, Build, Patrol, RaidCity, RaidRoute, ConnectRoute, Garrison"
                             .into(),
                     ),
                 });

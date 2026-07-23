@@ -418,6 +418,8 @@ pub const ERR_INVALID_COMMAND: &str = "invalid_command";
 pub const ERR_INVALID_UNIT: &str = "invalid_unit";
 /// A referenced city ID does not exist or is not owned by the acting player.
 pub const ERR_INVALID_CITY: &str = "invalid_city";
+/// A referenced route ID does not exist.
+pub const ERR_INVALID_ROUTE: &str = "invalid_route";
 /// A tile coordinate does not correspond to any map tile.
 pub const ERR_INVALID_TILE: &str = "invalid_tile";
 /// The player does not have enough resources to perform the action.
