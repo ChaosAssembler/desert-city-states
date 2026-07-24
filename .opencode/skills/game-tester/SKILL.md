@@ -1,68 +1,51 @@
 ---
 name: game-tester
-description: Use when playing or testing Desert City States through the agent protocol — teaches opencode-pty usage, error recovery, playing strategy, and testing methodology
+description: Use when playing or testing Desert City States through the agent protocol — teaches MCP tool usage, error recovery, playing strategy, and testing methodology
 ---
 
 # Game Tester
 
-Play and test Desert City States through the agent protocol (`dcs-app --serve`). Communicate with the game using opencode-pty tools and the JSON-line protocol over stdin/stdout.
+Play and test Desert City States through the agent protocol (`dcs-app --serve`). Communicate with the game using MCP tools and the JSON-line protocol.
 
 ## Rules
 
-- Always spawn the game server before sending any game commands.
-- Send exactly one JSON request per line, terminated with `\n`.
+- Use `ping` to verify the server is reachable before sending game commands.
 - Check every response for `"type":"error"` before proceeding.
-- Always claim a player after creating a new game.
+- Always `claim_player` after creating a new game.
 - End turns explicitly with an `EndTurn` command — the server does not auto-advance.
-- Read all response lines — the server may produce multiple response lines per request.
+- Read all response data — the server may produce multiple response lines per request.
 
 ## Workflow
 
 ### Start
 
-Verify the `dcs-app` binary exists before spawning. Report to the orchestrator if missing; do not attempt to build it. Spawn via `pty_spawn("cargo", ["run", "--bin", "dcs-app", "--", "--serve"], ...)`. Read the first response to confirm the server is up before sending game commands.
+Verify the `dcs-app` binary exists before starting. Report to the orchestrator if missing; do not attempt to build it. Use `ping` to verify the server is running before sending game commands.
 
 ### Play loop
 
 1. Call `new_game` with desired scenario and seed.
 2. Call `claim_player` to join as a player.
-3. Enter the turn loop: `observe` the game state, send `act` with commands, `observe` again to confirm state changed. Repeat until the game ends, a bug is encountered, or the test scenario completes.
+3. Enter the turn loop: `observe` the game state, call `act` with commands, `observe` again to confirm state changed. Repeat until the game ends, a bug is encountered, or the test scenario completes.
 4. Always include an `EndTurn` command at the end of your `act` request when ready to advance.
 
 ### Error recovery
 
-Parse the `hint` field from every error response — the server provides actionable guidance. Retry with backoff before concluding the server is broken. On crash or panic, kill the process with `pty_kill` and report with full context. If the session is still alive after an unexpected state, log the discrepancy and continue.
+Parse the `hint` field from every error response — the server provides actionable guidance. Retry with backoff before concluding the server is broken. If the session is still alive after an unexpected state, log the discrepancy and continue.
 
-### Restart
+## MCP Tool Reference
 
-Kill the session with `pty_kill` and re-spawn for the next test scenario.
+Interact with the game server through these MCP tools:
 
-## Reporting
-
-Report to the orchestrator:
-- What was tested: scenario, seed, parameters, and steps taken.
-- Expected vs. actual behavior for each test case.
-- Any bugs, crashes, or protocol violations observed.
-- Relevant protocol log excerpts — include only the exchanges relevant to the finding, not the full transcript.
-
-## Testing Principles
-
-- Test both happy paths and adversarial inputs: invalid actions, out-of-order commands, and boundary resource values.
-- When reproducing a known bug, vary parameters to find the minimal reproduction case.
-- Always `observe` after each action to confirm the state updated as expected.
-- Record the full command and response sequence for any bug report so the orchestrator can reproduce it.
-
-## opencode-pty Tool Usage
-
-Interact with the game server through these pty tools:
-
-| Tool | Purpose | Example |
-|------|---------|---------|
-| `pty_spawn` | Start the game server | `pty_spawn(command="cargo", args=["run", "--bin", "dcs-app", "--", "--serve"], title="DCS", notifyOnExit=true)` |
-| `pty_write` | Send a JSON request | `pty_write(id=SESSION_ID, data="{\"type\":\"ping\"}\n")` |
-| `pty_read` | Read JSON response(s) | `pty_read(id=SESSION_ID, limit=5)` |
-| `pty_kill` | Terminate the server | `pty_kill(id=SESSION_ID)` |
-| `pty_list` | List active sessions | `pty_list()` |
+| MCP Tool | Purpose |
+|----------|---------|
+| `ping` | Health check — verify server is running |
+| `new_game` | Create a new game session |
+| `claim_player` | Claim a player slot in the game |
+| `observe` | Get game state observation (fog-of-war filtered) |
+| `act` | Submit commands for the current turn |
+| `load_game` | Load a saved game |
+| `save_game` | Save the current game |
+| `help` | List available operations |
 
 ## Protocol Reference
 
@@ -79,12 +62,15 @@ Key principles:
 - Always place `EndTurn` as the last command when ready to advance the turn.
 - The server runs all AI turns automatically after your `EndTurn`.
 
-Example of a single command batch:
+Example of a single command batch via `act`:
 ```json
-{"type":"act","commands":[
-  {"MoveUnit":{"unit":0,"to":{"q":4,"letter_r":-3}}},
-  {"EndTurn":{}}
-]}
+{
+  "type": "act",
+  "commands": [
+    {"MoveUnit": {"unit": 0, "to": {"q": 4, "letter_r": -3}}},
+    {"EndTurn": {}}
+  ]
+}
 ```
 
 ## Common Error Recovery
@@ -163,7 +149,6 @@ Every error response includes a `hint` field with specific, actionable guidance.
 - Send an `act` without an `EndTurn` command.
 - Claim an invalid `player_id`.
 - Send malformed JSON.
-- Spawn a second instance without killing the first.
 - Load a save file, act, then save again — verify round-trip.
 - Send multiple commands in one batch where some are valid and some are not.
 
@@ -177,6 +162,6 @@ Every error response includes a `hint` field with specific, actionable guidance.
 - The `observe` response is the source of truth — always read it before acting.
 - IDs are assigned by the server — never fabricate them.
 - Send commands in dependency order within a single `act` request (e.g., move then found).
-- Read all response lines from `pty_read` — the server may produce multiple lines per request.
-- If `pty_read` returns empty, wait briefly and retry — the server may still be processing.
+- Read all response data from `observe` — the server may produce multiple lines per request.
+- If `observe` returns empty or stale data, wait briefly and retry — the server may still be processing.
 - Keep session state (player_id, city IDs, unit IDs) in memory between turns.

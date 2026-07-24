@@ -5,6 +5,7 @@ members = [
     "crates/dcs-protocol",
     "crates/dcs-render",
     "crates/dcs-app",
+    "crates/dcs-mcp",
 ]
 
 [workspace.package]
