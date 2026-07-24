@@ -15,7 +15,7 @@ use dcs_core::hex::HexCoord;
 use dcs_core::model::{BUILD_COST, UNIT_TRAIN_COST};
 use dcs_core::{
     BuildingKind, BuildingKindExt, CityId, Command, GameEvent, GameState, PlayerId,
-    RouteId, ScenarioConfig, TileId, UnitId, UnitKind, UnitKindExt,
+    RouteId, ScenarioConfig, TileId, UnitId, UnitKind, UnitKindExt, VictoryKind,
 };
 use std::io::{self, BufRead, Write};
 use std::path::Path;
@@ -1107,5 +1107,1006 @@ fn game_event_to_output(event: &GameEvent) -> EventOutput {
     EventOutput {
         event_type: event_type.to_owned(),
         data,
+    }
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dcs_core::map::new_game;
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    /// Create an empty ServeState (no game loaded, no player claimed).
+    fn test_state() -> ServeState {
+        ServeState {
+            game: None,
+            player_id: None,
+        }
+    }
+
+    /// Create a ServeState with a freshly generated MVP game (seed=42).
+    fn state_with_game() -> ServeState {
+        let config = ScenarioConfig::mvp_preset();
+        let game = new_game(&config, 42);
+        ServeState {
+            game: Some(game),
+            player_id: None,
+        }
+    }
+
+    /// Create a ServeState with a game and player 0 claimed.
+    fn state_with_claimed_player() -> ServeState {
+        let mut state = state_with_game();
+        state.player_id = Some(PlayerId(0));
+        state
+    }
+
+    /// Create a fresh `GameState` with one city founded for player 0.
+    ///
+    /// The MVP preset starts each player with a Scout and CaravanGuard but no
+    /// cities. This helper uses the Scout to found a city so that conversion
+    /// tests that need a city can use it directly.
+    fn game_with_city() -> GameState {
+        let mut game = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let player = PlayerId(0);
+        let unit = game
+            .units
+            .iter()
+            .find(|u| u.owner == player)
+            .expect("player 0 should have a starting unit");
+        let unit_id = unit.id;
+        let tile = unit.tile;
+        // Found a city using the Scout at its current tile.
+        game.step(&[Command::FoundCity { unit: unit_id, tile }]);
+        game
+    }
+
+    // -----------------------------------------------------------------------
+    // 1. Basic handler tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_ping() {
+        let mut state = test_state();
+        let resp = state.dispatch(Request::Ping);
+        assert!(matches!(resp, Response::Pong));
+    }
+
+    #[test]
+    fn test_help() {
+        let mut state = test_state();
+        let resp = state.dispatch(Request::Help);
+        match resp {
+            Response::HelpInfo { available_types } => {
+                assert!(!available_types.is_empty());
+                assert!(available_types.iter().any(|t| t.type_name == "ping"));
+                assert!(available_types.iter().any(|t| t.type_name == "new_game"));
+                assert!(available_types.iter().any(|t| t.type_name == "observe"));
+                assert!(available_types.iter().any(|t| t.type_name == "act"));
+            }
+            other => panic!("expected HelpInfo, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_new_game() {
+        let mut state = test_state();
+        let resp = state.dispatch(Request::NewGame {
+            scenario: ScenarioInput::Name("mvp".into()),
+            seed: Some(42),
+        });
+        match resp {
+            Response::GameCreated {
+                players,
+                turn,
+                map_radius,
+            } => {
+                assert!(!players.is_empty());
+                assert_eq!(turn, 1);
+                assert!(map_radius > 0);
+                assert!(state.game.is_some());
+            }
+            other => panic!("expected GameCreated, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_new_game_invalid_scenario() {
+        let mut state = test_state();
+        let resp = state.dispatch(Request::NewGame {
+            scenario: ScenarioInput::Name("nonexistent_preset".into()),
+            seed: Some(1),
+        });
+        match resp {
+            Response::Error { code, .. } => {
+                assert_eq!(code, ERR_SCENARIO_LOAD_FAILED);
+            }
+            other => panic!("expected Error for unknown scenario, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_claim_player() {
+        let mut state = state_with_game();
+        let resp = state.dispatch(Request::ClaimPlayer {
+            player_id: 0,
+            player_name: Some("Test Agent".into()),
+        });
+        match resp {
+            Response::PlayerClaimed {
+                player_id,
+                name,
+                color,
+            } => {
+                assert_eq!(player_id, 0);
+                assert_eq!(name, "Test Agent");
+                assert!(!color.is_empty());
+                assert_eq!(state.player_id, Some(PlayerId(0)));
+            }
+            other => panic!("expected PlayerClaimed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_claim_player_no_game() {
+        let mut state = test_state();
+        let resp = state.dispatch(Request::ClaimPlayer {
+            player_id: 0,
+            player_name: None,
+        });
+        match resp {
+            Response::Error { code, .. } => {
+                assert_eq!(code, ERR_GAME_NOT_INITIALIZED);
+            }
+            other => panic!("expected Error when no game loaded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_claim_player_invalid_id() {
+        let mut state = state_with_game();
+        let resp = state.dispatch(Request::ClaimPlayer {
+            player_id: 99,
+            player_name: None,
+        });
+        match resp {
+            Response::Error { code, .. } => {
+                assert_eq!(code, ERR_INVALID_PLAYER);
+            }
+            other => panic!("expected Error for invalid player ID, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 2. Observe tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_observe_before_game() {
+        let mut state = test_state();
+        let resp = state.dispatch(Request::Observe {
+            player_id: None,
+            detail: None,
+        });
+        match resp {
+            Response::Error { code, .. } => assert_eq!(code, ERR_GAME_NOT_INITIALIZED),
+            other => panic!("expected Error when no game loaded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_observe_after_new_game() {
+        let mut state = state_with_claimed_player();
+        let resp = state.dispatch(Request::Observe {
+            player_id: None,
+            detail: None,
+        });
+        match resp {
+            Response::Observation { _placeholder } => {
+                assert!(_placeholder.get("turn").is_some());
+                assert!(_placeholder.get("player_id").is_some());
+                assert!(_placeholder.get("is_my_turn").is_some());
+                assert!(_placeholder.get("resources").is_some());
+                assert!(_placeholder.get("discovered_tiles").is_some());
+                assert!(_placeholder.get("cities").is_some());
+                assert!(_placeholder.get("units").is_some());
+                assert!(_placeholder.get("legal_actions").is_some());
+            }
+            other => panic!("expected Observation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_observe_explicit_player() {
+        let mut state = state_with_game();
+        let resp = state.dispatch(Request::Observe {
+            player_id: Some(0),
+            detail: None,
+        });
+        match resp {
+            Response::Observation { _placeholder } => {
+                assert_eq!(_placeholder["player_id"], 0);
+            }
+            other => panic!("expected Observation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_observe_defaults_to_player_0() {
+        let mut state = state_with_game();
+        // Don't claim a player — should default to 0
+        let resp = state.dispatch(Request::Observe {
+            player_id: None,
+            detail: None,
+        });
+        match resp {
+            Response::Observation { _placeholder } => {
+                assert_eq!(_placeholder["player_id"], 0);
+            }
+            other => panic!("expected Observation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_observe_invalid_player() {
+        let mut state = state_with_game();
+        let resp = state.dispatch(Request::Observe {
+            player_id: Some(99),
+            detail: None,
+        });
+        match resp {
+            Response::Error { code, .. } => assert_eq!(code, ERR_INVALID_PLAYER),
+            other => panic!("expected Error for invalid player, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. Act tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_act_before_game() {
+        let mut state = test_state();
+        let resp = state.dispatch(Request::Act {
+            player_id: None,
+            commands: vec![CommandInput::EndTurn],
+        });
+        match resp {
+            Response::Error { code, .. } => assert_eq!(code, ERR_GAME_NOT_INITIALIZED),
+            other => panic!("expected Error when no game loaded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_act_before_claim() {
+        let mut state = state_with_game();
+        let resp = state.dispatch(Request::Act {
+            player_id: None,
+            commands: vec![CommandInput::EndTurn],
+        });
+        match resp {
+            Response::Error { code, .. } => assert_eq!(code, ERR_NO_PLAYER_CLAIMED),
+            other => panic!("expected Error when no player claimed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_act_end_turn() {
+        let mut state = state_with_claimed_player();
+        let resp = state.dispatch(Request::Act {
+            player_id: None,
+            commands: vec![CommandInput::EndTurn],
+        });
+        match resp {
+            Response::Events {
+                turn, errors, ..
+            } => {
+                assert!(turn >= 1);
+                assert!(errors.is_empty());
+            }
+            other => panic!("expected Events, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_act_not_your_turn() {
+        let mut state = state_with_game();
+        // Claim player 1 but player 0 goes first
+        let _ = state.dispatch(Request::ClaimPlayer {
+            player_id: 1,
+            player_name: None,
+        });
+        let resp = state.dispatch(Request::Act {
+            player_id: None,
+            commands: vec![CommandInput::EndTurn],
+        });
+        match resp {
+            Response::Error { code, .. } => assert_eq!(code, ERR_NOT_YOUR_TURN),
+            other => panic!("expected Error when not your turn, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_act_explicit_player_id() {
+        let mut state = state_with_claimed_player();
+        let resp = state.dispatch(Request::Act {
+            player_id: Some(0),
+            commands: vec![CommandInput::EndTurn],
+        });
+        match resp {
+            Response::Events { errors, .. } => assert!(errors.is_empty()),
+            other => panic!("expected Events, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_act_multiple_end_turns() {
+        let mut state = state_with_claimed_player();
+        // Multiple EndTurns in one batch
+        let resp = state.dispatch(Request::Act {
+            player_id: None,
+            commands: vec![CommandInput::EndTurn, CommandInput::EndTurn],
+        });
+        match resp {
+            Response::Events { errors, .. } => assert!(errors.is_empty()),
+            other => panic!("expected Events, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_act_move_unit_real_game() {
+        let mut state = state_with_claimed_player();
+        // Find a unit belonging to player 0
+        let unit_info = {
+            let game = state.game.as_ref().unwrap();
+            game.units
+                .iter()
+                .find(|u| u.owner == PlayerId(0))
+                .map(|u| (u.id.0, u.tile.0))
+        };
+        let (unit_id, tile_id) = unit_info.expect("player 0 should have at least one unit");
+        let resp = state.dispatch(Request::Act {
+            player_id: None,
+            commands: vec![CommandInput::MoveUnit {
+                unit: unit_id,
+                to: TileCoord::Id(tile_id),
+            }],
+        });
+        match resp {
+            Response::Events { .. } => {} // success or graceful rejection is fine
+            other => panic!("expected Events, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. Command conversion tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_convert_end_turn() {
+        let game = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let player = PlayerId(0);
+        let (cmds, errors) = convert_commands(&[CommandInput::EndTurn], &game, player);
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], Command::EndTurn));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_convert_move_unit_by_id() {
+        let game = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let player = PlayerId(0);
+        let unit = game
+            .units
+            .iter()
+            .find(|u| u.owner == player)
+            .expect("player 0 should have a unit");
+        let unit_id = unit.id.0;
+        let tile_id = unit.tile.0;
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::MoveUnit {
+                unit: unit_id,
+                to: TileCoord::Id(tile_id),
+            }],
+            &game,
+            player,
+        );
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], Command::MoveUnit { .. }));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_convert_move_unit_by_hex() {
+        let game = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let player = PlayerId(0);
+        let unit = game
+            .units
+            .iter()
+            .find(|u| u.owner == player)
+            .expect("player 0 should have a unit");
+        let unit_id = unit.id.0;
+        let coord = game.tiles[unit.tile.0 as usize].coord;
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::MoveUnit {
+                unit: unit_id,
+                to: TileCoord::Hex {
+                    q: coord.q,
+                    r: coord.r,
+                },
+            }],
+            &game,
+            player,
+        );
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], Command::MoveUnit { .. }));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_convert_invalid_unit() {
+        let game = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let player = PlayerId(0);
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::MoveUnit {
+                unit: 999,
+                to: TileCoord::Id(0),
+            }],
+            &game,
+            player,
+        );
+        assert!(cmds.is_empty());
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, ERR_INVALID_UNIT);
+    }
+
+    #[test]
+    fn test_convert_invalid_tile() {
+        let game = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let player = PlayerId(0);
+        let unit = game
+            .units
+            .iter()
+            .find(|u| u.owner == player)
+            .expect("player 0 should have a unit");
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::MoveUnit {
+                unit: unit.id.0,
+                to: TileCoord::Hex {
+                    q: 999,
+                    r: -999,
+                },
+            }],
+            &game,
+            player,
+        );
+        assert!(cmds.is_empty());
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, ERR_INVALID_TILE);
+    }
+
+    #[test]
+    fn test_convert_found_city() {
+        let game = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let player = PlayerId(0);
+        let unit = game
+            .units
+            .iter()
+            .find(|u| u.owner == player)
+            .expect("player 0 should have a unit");
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::FoundCity {
+                unit: unit.id.0,
+                tile: TileCoord::Id(unit.tile.0),
+            }],
+            &game,
+            player,
+        );
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], Command::FoundCity { .. }));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_convert_found_city_invalid_unit() {
+        let game = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let player = PlayerId(0);
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::FoundCity {
+                unit: 999,
+                tile: TileCoord::Id(0),
+            }],
+            &game,
+            player,
+        );
+        assert!(cmds.is_empty());
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, ERR_INVALID_UNIT);
+    }
+
+    #[test]
+    fn test_convert_train_unit() {
+        let game = game_with_city();
+        let player = PlayerId(0);
+        let city = game
+            .cities
+            .iter()
+            .find(|c| c.owner == player)
+            .expect("player 0 should have a city");
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::TrainUnit {
+                city: city.id.0,
+                kind: "Scout".into(),
+            }],
+            &game,
+            player,
+        );
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], Command::TrainUnit { .. }));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_convert_train_unit_invalid_kind() {
+        let game = game_with_city();
+        let player = PlayerId(0);
+        let city = game
+            .cities
+            .iter()
+            .find(|c| c.owner == player)
+            .expect("player 0 should have a city");
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::TrainUnit {
+                city: city.id.0,
+                kind: "BogusKind".into(),
+            }],
+            &game,
+            player,
+        );
+        assert!(cmds.is_empty());
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, ERR_INVALID_COMMAND);
+    }
+
+    #[test]
+    fn test_convert_build() {
+        let game = game_with_city();
+        let player = PlayerId(0);
+        let city = game
+            .cities
+            .iter()
+            .find(|c| c.owner == player)
+            .expect("player 0 should have a city");
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::Build {
+                city: city.id.0,
+                building: "Well".into(),
+            }],
+            &game,
+            player,
+        );
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], Command::Build { .. }));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_convert_build_invalid_kind() {
+        let game = game_with_city();
+        let player = PlayerId(0);
+        let city = game
+            .cities
+            .iter()
+            .find(|c| c.owner == player)
+            .expect("player 0 should have a city");
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::Build {
+                city: city.id.0,
+                building: "BogusBuilding".into(),
+            }],
+            &game,
+            player,
+        );
+        assert!(cmds.is_empty());
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, ERR_INVALID_COMMAND);
+    }
+
+    #[test]
+    fn test_convert_patrol() {
+        let game = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let player = PlayerId(0);
+        let unit = game
+            .units
+            .iter()
+            .find(|u| u.owner == player)
+            .expect("player 0 should have a unit");
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::Patrol {
+                unit: Some(unit.id.0),
+                tile: unit.tile.0,
+            }],
+            &game,
+            player,
+        );
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], Command::Patrol { .. }));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_convert_patrol_no_unit() {
+        let game = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let player = PlayerId(0);
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::Patrol {
+                unit: None,
+                tile: 0,
+            }],
+            &game,
+            player,
+        );
+        assert!(cmds.is_empty());
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, ERR_INVALID_COMMAND);
+    }
+
+    #[test]
+    fn test_convert_connect_route() {
+        let game = game_with_city();
+        let player = PlayerId(0);
+        let city = game
+            .cities
+            .iter()
+            .find(|c| c.owner == player)
+            .expect("player 0 should have a city");
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::ConnectRoute {
+                from: Some(city.id.0),
+                to: city.id.0,
+            }],
+            &game,
+            player,
+        );
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], Command::ConnectRoute { .. }));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_convert_connect_route_no_from() {
+        let game = game_with_city();
+        let player = PlayerId(0);
+        let city = game
+            .cities
+            .iter()
+            .find(|c| c.owner == player)
+            .expect("player 0 should have a city");
+        let (cmds, errors) = convert_commands(
+            &[CommandInput::ConnectRoute {
+                from: None,
+                to: city.id.0,
+            }],
+            &game,
+            player,
+        );
+        assert_eq!(cmds.len(), 1);
+        assert!(errors.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. Game event output conversion tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_game_event_to_output_unit_moved() {
+        let event = GameEvent::UnitMoved {
+            unit: UnitId(1),
+            from: TileId(5),
+            to: TileId(6),
+        };
+        let output = game_event_to_output(&event);
+        assert_eq!(output.event_type, "unit_moved");
+        assert_eq!(output.data["unit"], 1);
+        assert_eq!(output.data["from"], 5);
+        assert_eq!(output.data["to"], 6);
+    }
+
+    #[test]
+    fn test_game_event_to_output_city_founded() {
+        let event = GameEvent::CityFounded {
+            city: CityId(0),
+            owner: PlayerId(0),
+            tile: TileId(3),
+        };
+        let output = game_event_to_output(&event);
+        assert_eq!(output.event_type, "city_founded");
+        assert_eq!(output.data["city"], 0);
+        assert_eq!(output.data["owner"], 0);
+        assert_eq!(output.data["tile"], 3);
+    }
+
+    #[test]
+    fn test_game_event_to_output_victory() {
+        let event = GameEvent::Victory {
+            kind: VictoryKind::OasisDominance,
+            winner: PlayerId(0),
+        };
+        let output = game_event_to_output(&event);
+        assert_eq!(output.event_type, "victory");
+        assert_eq!(output.data["winner"], 0);
+    }
+
+    #[test]
+    fn test_game_event_to_output_all_variants() {
+        let events = vec![
+            GameEvent::UnitMoved {
+                unit: UnitId(1),
+                from: TileId(0),
+                to: TileId(1),
+            },
+            GameEvent::CityFounded {
+                city: CityId(0),
+                owner: PlayerId(0),
+                tile: TileId(2),
+            },
+            GameEvent::UnitTrained {
+                unit: UnitId(2),
+                city: CityId(0),
+            },
+            GameEvent::Built {
+                city: CityId(0),
+                building: BuildingKind::Well,
+            },
+            GameEvent::Income {
+                player: PlayerId(0),
+                water: 5,
+                wealth: 3,
+                influence: 1,
+            },
+            GameEvent::Grown {
+                city: CityId(0),
+                population: 3,
+            },
+            GameEvent::Starved {
+                city: CityId(0),
+                population: 1,
+            },
+            GameEvent::TurnAdvanced { turn: 2 },
+            GameEvent::Warn {
+                message: "test warning".into(),
+            },
+        ];
+        for event in &events {
+            let output = game_event_to_output(event);
+            assert!(!output.event_type.is_empty());
+            // Must be serializable
+            let _json = serde_json::to_string(&output).unwrap();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 6. handle_line tests (JSON string → dispatch pipeline)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_handle_line_ping() {
+        let mut state = test_state();
+        let resp = state.handle_line(r#"{"type":"ping"}"#);
+        assert!(matches!(resp, Response::Pong));
+    }
+
+    #[test]
+    fn test_handle_line_empty() {
+        let mut state = test_state();
+        let resp = state.handle_line("");
+        match resp {
+            Response::Error { code, .. } => assert_eq!(code, ERR_OTHER_UNEXPECTED),
+            other => panic!("expected Error for empty line, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_handle_line_malformed_json() {
+        let mut state = test_state();
+        let resp = state.handle_line("not valid json");
+        match resp {
+            Response::Error { code, .. } => assert_eq!(code, ERR_OTHER_UNEXPECTED),
+            other => panic!("expected Error for malformed JSON, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_handle_line_new_game() {
+        let mut state = test_state();
+        let resp = state.handle_line(r#"{"type":"new_game","scenario":"mvp","seed":42}"#);
+        match resp {
+            Response::GameCreated { players, .. } => assert!(!players.is_empty()),
+            other => panic!("expected GameCreated, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 7. Response serialization round-trip
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_pong_round_trip() {
+        let resp = Response::Pong;
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: Response = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back, Response::Pong));
+    }
+
+    #[test]
+    fn test_error_round_trip() {
+        let resp = Response::error(
+            ERR_INVALID_COMMAND,
+            "bad command",
+            Some("fix it".into()),
+            "act",
+        );
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: Response = serde_json::from_str(&json).unwrap();
+        match back {
+            Response::Error {
+                code,
+                message,
+                hint,
+                request_type,
+            } => {
+                assert_eq!(code, ERR_INVALID_COMMAND);
+                assert_eq!(message, "bad command");
+                assert_eq!(hint.as_deref(), Some("fix it"));
+                assert_eq!(request_type, "act");
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 8. save / load error paths
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_save_game_no_game() {
+        let mut state = test_state();
+        let resp = state.dispatch(Request::SaveGame {
+            path: "/tmp/dcs_test_save.json".into(),
+        });
+        match resp {
+            Response::Error { code, .. } => assert_eq!(code, ERR_GAME_NOT_INITIALIZED),
+            other => panic!("expected Error when no game loaded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_load_game_nonexistent() {
+        let mut state = test_state();
+        let resp = state.dispatch(Request::LoadGame {
+            path: "/tmp/dcs_nonexistent_save_file.json".into(),
+        });
+        match resp {
+            Response::Error { code, .. } => assert_eq!(code, ERR_IO_FILE),
+            other => panic!("expected Error for nonexistent file, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 9. State reset behavior
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_new_game_resets_player_claim() {
+        let mut state = state_with_game();
+        let _ = state.dispatch(Request::ClaimPlayer {
+            player_id: 0,
+            player_name: None,
+        });
+        assert_eq!(state.player_id, Some(PlayerId(0)));
+
+        // New game should reset the player claim
+        let _ = state.dispatch(Request::NewGame {
+            scenario: ScenarioInput::Name("mvp".into()),
+            seed: Some(99),
+        });
+        assert_eq!(state.player_id, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // 10. Full round-trip session test
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_full_game_session() {
+        let mut state = test_state();
+
+        // Step 1: ping
+        let resp = state.dispatch(Request::Ping);
+        assert!(matches!(resp, Response::Pong));
+
+        // Step 2: create new game
+        let resp = state.dispatch(Request::NewGame {
+            scenario: ScenarioInput::Name("mvp".into()),
+            seed: Some(42),
+        });
+        let player_count = match &resp {
+            Response::GameCreated {
+                players,
+                turn,
+                map_radius,
+            } => {
+                assert_eq!(*turn, 1);
+                assert!(*map_radius > 0);
+                players.len()
+            }
+            other => panic!("expected GameCreated, got {other:?}"),
+        };
+        assert!(player_count > 0);
+
+        // Step 3: claim player 0
+        let resp = state.dispatch(Request::ClaimPlayer {
+            player_id: 0,
+            player_name: Some("Test Agent".into()),
+        });
+        match resp {
+            Response::PlayerClaimed {
+                player_id,
+                name, ..
+            } => {
+                assert_eq!(player_id, 0);
+                assert_eq!(name, "Test Agent");
+            }
+            other => panic!("expected PlayerClaimed, got {other:?}"),
+        }
+
+        // Step 4: observe initial state
+        let resp = state.dispatch(Request::Observe {
+            player_id: None,
+            detail: None,
+        });
+        match resp {
+            Response::Observation { _placeholder } => {
+                assert_eq!(_placeholder["turn"], 1);
+                assert!(_placeholder.get("resources").is_some());
+                assert!(_placeholder.get("is_my_turn").is_some());
+                assert!(_placeholder.get("units").is_some());
+            }
+            other => panic!("expected Observation, got {other:?}"),
+        }
+
+        // Step 5: end the turn
+        let resp = state.dispatch(Request::Act {
+            player_id: None,
+            commands: vec![CommandInput::EndTurn],
+        });
+        match resp {
+            Response::Events {
+                turn, errors, ..
+            } => {
+                assert!(turn >= 1);
+                assert!(errors.is_empty());
+            }
+            other => panic!("expected Events after EndTurn, got {other:?}"),
+        }
+
+        // Step 6: observe again (should reflect turn advancement)
+        let resp = state.dispatch(Request::Observe {
+            player_id: None,
+            detail: None,
+        });
+        match resp {
+            Response::Observation { _placeholder } => {
+                assert!(_placeholder.get("turn").is_some());
+            }
+            other => panic!("expected Observation after EndTurn, got {other:?}"),
+        }
     }
 }
