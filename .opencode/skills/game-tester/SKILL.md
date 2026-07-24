@@ -64,9 +64,6 @@ Interact with the game server through these pty tools:
 | `pty_kill` | Terminate the server | `pty_kill(id=SESSION_ID)` |
 | `pty_list` | List active sessions | `pty_list()` |
 
-> **Note:** The `dcs-app` binary is not in PATH. Always invoke via `cargo run --bin dcs-app -- --serve ...`.
-> The agent's `bash` permission must match this invocation pattern.
-
 ## Protocol Reference
 
 The full JSON protocol is specified in `docs/specs/presentation-agent-protocol.md`. That document defines all request types (`ping`, `new_game`, `claim_player`, `observe`, `act`, `save_game`, `load_game`, `help`), all response types, the `Command` input shapes (11 variants), `GameEvent` shapes, error codes with hints, and fog-of-war filtering rules.
