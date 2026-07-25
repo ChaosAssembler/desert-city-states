@@ -3,6 +3,13 @@
   "default_agent": "plan",
   "subagent_depth": 2,
   "plugin": ["opencode-pty"],
+  "mcp": {
+    "dcs": {
+      "type": "local",
+      "command": ["cargo", "run", "--bin", "dcs-mcp"],
+      "enabled": true
+    }
+  },
   "permission": {
     "*": "deny",
     "todowrite": "allow"

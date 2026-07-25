@@ -1,11 +1,11 @@
 ---
 name: game-tester
-description: Use when playing or testing Desert City States through the agent protocol — teaches MCP tool usage, error recovery, playing strategy, and testing methodology
+description: Use when playing or testing Desert City States through the MCP server (`dcs-mcp`) — teaches MCP tool usage, error recovery, playing strategy, and testing methodology
 ---
 
 # Game Tester
 
-Play and test Desert City States through the agent protocol (`dcs-app --serve`). Communicate with the game using MCP tools and the JSON-line protocol.
+Play and test Desert City States through the MCP server (`dcs-mcp`). Communicate with the game using MCP tools and the JSON-line protocol.
 
 ## Rules
 
@@ -19,7 +19,7 @@ Play and test Desert City States through the agent protocol (`dcs-app --serve`).
 
 ### Start
 
-Verify the `dcs-app` binary exists before starting. Report to the orchestrator if missing; do not attempt to build it. Use `ping` to verify the server is running before sending game commands.
+Use `ping` to verify the server is running before sending game commands.
 
 ### Play loop
 
