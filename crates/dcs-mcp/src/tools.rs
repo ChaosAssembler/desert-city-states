@@ -6,8 +6,12 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::process::GameProcess;
+use rmcp::ErrorData as McpError;
+use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;
+use rmcp::tool_router;
+
+use crate::error::DcsError;
 
 /// Input for the new_game tool.
 #[derive(Deserialize, JsonSchema)]
@@ -15,7 +19,6 @@ pub struct NewGameInput {
     /// Scenario name (e.g., "mvp") or scenario config as JSON.
     pub scenario: String,
     /// Optional seed for deterministic generation.
-    #[schemars(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
 }
 
@@ -25,7 +28,6 @@ pub struct ClaimPlayerInput {
     /// Player ID to claim (0-based).
     pub player_id: u32,
     /// Optional player name.
-    #[schemars(skip_serializing_if = "Option::is_none")]
     pub player_name: Option<String>,
 }
 
@@ -33,10 +35,8 @@ pub struct ClaimPlayerInput {
 #[derive(Deserialize, JsonSchema)]
 pub struct ObserveInput {
     /// Player ID to observe as (uses claimed player if omitted).
-    #[schemars(skip_serializing_if = "Option::is_none")]
     pub player_id: Option<u32>,
     /// Detail level: "full" or "summary" (default: "full").
-    #[schemars(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
 }
 
@@ -44,7 +44,6 @@ pub struct ObserveInput {
 #[derive(Deserialize, JsonSchema)]
 pub struct ActInput {
     /// Player ID submitting commands (uses claimed player if omitted).
-    #[schemars(skip_serializing_if = "Option::is_none")]
     pub player_id: Option<u32>,
     /// List of commands to execute.
     pub commands: Vec<serde_json::Value>,
@@ -64,140 +63,243 @@ pub struct SaveGameInput {
     pub path: String,
 }
 
-// ---------------------------------------------------------------------------
-// Tool implementation
-// ---------------------------------------------------------------------------
+/// Valid detail levels for the observe tool.
+const VALID_DETAIL_LEVELS: &[&str] = &[
+    "full",
+    "resources",
+    "cities",
+    "units",
+    "routes",
+    "map",
+    "legal_actions",
+    "victory",
+];
 
-/// MCP tools for Desert City States.
-#[derive(Clone)]
-pub struct DcsTools {
-    pub process: GameProcess,
-}
-
-impl DcsTools {
-    /// Create a new `DcsTools` wrapping an already-spawned game process.
-    pub fn new(process: GameProcess) -> Self {
-        Self { process }
+/// Validate that a detail level string is one of the accepted values.
+///
+/// Returns `Ok(())` if valid, or `Err(DcsError::InvalidInput)` with a
+/// helpful message listing the allowed values.
+fn validate_detail_level(detail: &str) -> Result<(), DcsError> {
+    if VALID_DETAIL_LEVELS.contains(&detail) {
+        Ok(())
+    } else {
+        Err(DcsError::InvalidInput(format!(
+            "Invalid detail level '{}'. Must be one of: {}",
+            detail,
+            VALID_DETAIL_LEVELS.join(", ")
+        )))
     }
 }
 
-#[tool(tool_box)]
-impl DcsTools {
+// ---------------------------------------------------------------------------
+// Tool implementation — methods are on DcsServer (defined in lib.rs)
+// ---------------------------------------------------------------------------
+
+#[tool_router(vis = "pub")]
+impl crate::DcsServer {
     /// Health check — verify the game server is running.
     #[tool(description = "Check if the game server is responding")]
-    pub async fn ping(&self) -> Result<String, String> {
+    pub async fn ping(&self) -> Result<String, McpError> {
         let request = serde_json::json!({"type": "ping"});
-        match self.process.send_request(&request).await {
-            Ok(response) => Ok(serde_json::to_string_pretty(&response).unwrap_or_default()),
-            Err(e) => Err(format!("Failed to ping server: {e}")),
-        }
+        let response = self
+            .process
+            .send_request(&request)
+            .await
+            .map_err(DcsError::from)?;
+        Ok(serde_json::to_string_pretty(&response).unwrap_or_default())
     }
 
     /// Create a new game session.
     #[tool(description = "Create a new game. Returns player list, turn number, and map radius.")]
-    pub async fn new_game(&self, #[tool(aggr)] input: NewGameInput) -> Result<String, String> {
-        let scenario = if serde_json::from_str::<serde_json::Value>(&input.scenario).is_ok() {
-            serde_json::from_str(&input.scenario).unwrap()
+    pub async fn new_game(
+        &self,
+        Parameters(NewGameInput { scenario, seed }): Parameters<NewGameInput>,
+    ) -> Result<String, McpError> {
+        let scenario = if serde_json::from_str::<serde_json::Value>(&scenario).is_ok() {
+            serde_json::from_str(&scenario).unwrap()
         } else {
-            serde_json::json!(input.scenario)
+            serde_json::json!(scenario)
         };
 
         let request = serde_json::json!({
             "type": "new_game",
             "scenario": scenario,
-            "seed": input.seed
+            "seed": seed
         });
 
-        match self.process.send_request(&request).await {
-            Ok(response) => Ok(serde_json::to_string_pretty(&response).unwrap_or_default()),
-            Err(e) => Err(format!("Failed to create game: {e}")),
-        }
+        let response = self
+            .process
+            .send_request(&request)
+            .await
+            .map_err(DcsError::from)?;
+        Ok(serde_json::to_string_pretty(&response).unwrap_or_default())
     }
 
     /// Claim a player slot.
     #[tool(description = "Claim a player slot to control. Must be called after new_game.")]
     pub async fn claim_player(
         &self,
-        #[tool(aggr)] input: ClaimPlayerInput,
-    ) -> Result<String, String> {
+        Parameters(ClaimPlayerInput {
+            player_id,
+            player_name,
+        }): Parameters<ClaimPlayerInput>,
+    ) -> Result<String, McpError> {
         let request = serde_json::json!({
             "type": "claim_player",
-            "player_id": input.player_id,
-            "player_name": input.player_name
+            "player_id": player_id,
+            "player_name": player_name
         });
 
-        match self.process.send_request(&request).await {
-            Ok(response) => Ok(serde_json::to_string_pretty(&response).unwrap_or_default()),
-            Err(e) => Err(format!("Failed to claim player: {e}")),
-        }
+        let response = self
+            .process
+            .send_request(&request)
+            .await
+            .map_err(DcsError::from)?;
+        Ok(serde_json::to_string_pretty(&response).unwrap_or_default())
     }
 
     /// Observe the current game state (fog-of-war filtered).
-    #[tool(description = "Get the current game state observation. Includes resources, cities, units, routes, and legal actions. Filtered by fog of war for the specified player.")]
-    pub async fn observe(&self, #[tool(aggr)] input: ObserveInput) -> Result<String, String> {
+    #[tool(
+        description = "Get the current game state observation. Includes resources, cities, units, routes, and legal actions. Filtered by fog of war for the specified player."
+    )]
+    pub async fn observe(
+        &self,
+        Parameters(ObserveInput { player_id, detail }): Parameters<ObserveInput>,
+    ) -> Result<String, McpError> {
+        // Validate detail level if provided.
+        if let Some(ref d) = detail {
+            validate_detail_level(d)?;
+        }
+
         let request = serde_json::json!({
             "type": "observe",
-            "player_id": input.player_id,
-            "detail": input.detail
+            "player_id": player_id,
+            "detail": detail
         });
 
-        match self.process.send_request(&request).await {
-            Ok(response) => Ok(serde_json::to_string_pretty(&response).unwrap_or_default()),
-            Err(e) => Err(format!("Failed to observe: {e}")),
-        }
+        let response = self
+            .process
+            .send_request(&request)
+            .await
+            .map_err(DcsError::from)?;
+        Ok(serde_json::to_string_pretty(&response).unwrap_or_default())
     }
 
     /// Submit commands for the current turn.
-    #[tool(description = "Submit commands for the current turn. Commands include: EndTurn, MoveUnit, FoundCity, TrainUnit, Build, ConnectRoute, Patrol, Garrison, RaidRoute, RaidCity. Include EndTurn at the end to advance to the next turn.")]
-    pub async fn act(&self, #[tool(aggr)] input: ActInput) -> Result<String, String> {
+    #[tool(
+        description = "Submit commands for the current turn. Commands include: EndTurn, MoveUnit, FoundCity, TrainUnit, Build, ConnectRoute, Patrol, Garrison, RaidRoute, RaidCity. Include EndTurn at the end to advance to the next turn."
+    )]
+    pub async fn act(
+        &self,
+        Parameters(ActInput {
+            player_id,
+            commands,
+        }): Parameters<ActInput>,
+    ) -> Result<String, McpError> {
         let request = serde_json::json!({
             "type": "act",
-            "player_id": input.player_id,
-            "commands": input.commands
+            "player_id": player_id,
+            "commands": commands
         });
 
-        match self.process.send_request(&request).await {
-            Ok(response) => Ok(serde_json::to_string_pretty(&response).unwrap_or_default()),
-            Err(e) => Err(format!("Failed to execute commands: {e}")),
-        }
+        let response = self
+            .process
+            .send_request(&request)
+            .await
+            .map_err(DcsError::from)?;
+        Ok(serde_json::to_string_pretty(&response).unwrap_or_default())
     }
 
     /// Load a saved game.
     #[tool(description = "Load a previously saved game from a file path.")]
-    pub async fn load_game(&self, #[tool(aggr)] input: LoadGameInput) -> Result<String, String> {
+    pub async fn load_game(
+        &self,
+        Parameters(LoadGameInput { path }): Parameters<LoadGameInput>,
+    ) -> Result<String, McpError> {
         let request = serde_json::json!({
             "type": "load_game",
-            "path": input.path
+            "path": path
         });
 
-        match self.process.send_request(&request).await {
-            Ok(response) => Ok(serde_json::to_string_pretty(&response).unwrap_or_default()),
-            Err(e) => Err(format!("Failed to load game: {e}")),
-        }
+        let response = self
+            .process
+            .send_request(&request)
+            .await
+            .map_err(DcsError::from)?;
+        Ok(serde_json::to_string_pretty(&response).unwrap_or_default())
     }
 
     /// Save the current game.
     #[tool(description = "Save the current game state to a file path.")]
-    pub async fn save_game(&self, #[tool(aggr)] input: SaveGameInput) -> Result<String, String> {
+    pub async fn save_game(
+        &self,
+        Parameters(SaveGameInput { path }): Parameters<SaveGameInput>,
+    ) -> Result<String, McpError> {
         let request = serde_json::json!({
             "type": "save_game",
-            "path": input.path
+            "path": path
         });
 
-        match self.process.send_request(&request).await {
-            Ok(response) => Ok(serde_json::to_string_pretty(&response).unwrap_or_default()),
-            Err(e) => Err(format!("Failed to save game: {e}")),
-        }
+        let response = self
+            .process
+            .send_request(&request)
+            .await
+            .map_err(DcsError::from)?;
+        Ok(serde_json::to_string_pretty(&response).unwrap_or_default())
     }
 
     /// List available operations and their parameters.
-    #[tool(description = "Show help information about available request types and their parameters.")]
-    pub async fn help(&self) -> Result<String, String> {
+    #[tool(
+        description = "Show help information about available request types and their parameters."
+    )]
+    pub async fn help(&self) -> Result<String, McpError> {
         let request = serde_json::json!({"type": "help"});
 
-        match self.process.send_request(&request).await {
-            Ok(response) => Ok(serde_json::to_string_pretty(&response).unwrap_or_default()),
-            Err(e) => Err(format!("Failed to get help: {e}")),
+        let response = self
+            .process
+            .send_request(&request)
+            .await
+            .map_err(DcsError::from)?;
+        Ok(serde_json::to_string_pretty(&response).unwrap_or_default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_detail_levels() {
+        let levels = [
+            "full", "resources", "cities", "units", "routes",
+            "map", "legal_actions", "victory",
+        ];
+        for level in levels {
+            assert!(
+                validate_detail_level(level).is_ok(),
+                "Expected '{level}' to be a valid detail level"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_detail_level_string() {
+        let result = validate_detail_level("invalid");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, DcsError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn empty_detail_level_string() {
+        let result = validate_detail_level("");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            DcsError::InvalidInput(msg) => {
+                assert!(msg.contains("Must be one of"));
+            }
+            other => panic!("Expected InvalidInput, got {:?}", other),
         }
     }
 }

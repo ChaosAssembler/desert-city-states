@@ -35,7 +35,7 @@ impl GameProcess {
     ///
     /// Returns an error if the process fails to spawn.
     pub async fn spawn() -> Result<Self> {
-        let child = Command::new("cargo")
+        let mut child = Command::new("cargo")
             .args(["run", "--bin", "dcs-app", "--", "serve"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -44,8 +44,8 @@ impl GameProcess {
             .spawn()
             .context("Failed to spawn dcs-app serve")?;
 
-        let stdin = child.stdin.unwrap();
-        let stdout = child.stdout.unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
 
         // Log stderr output from the game server
@@ -67,20 +67,47 @@ impl GameProcess {
         })
     }
 
+    /// Check if the child process is still running.
+    ///
+    /// Attempts a no-op write to stdin to detect whether the process has
+    /// exited. Returns `true` if the write succeeds, `false` otherwise.
+    pub async fn is_running(&self) -> bool {
+        let mut guard = self.inner.lock().await;
+        matches!(guard.stdin.write_all(b"\n").await, Ok(()))
+    }
+
     /// Send a JSON request and receive a JSON response.
     ///
     /// Writes the request as a single line to stdin, reads one line from
-    /// stdout, and parses the JSON response.
+    /// stdout, and parses the JSON response. If the initial communication
+    /// fails because the process has died, automatically restarts and
+    /// retries once.
     ///
     /// # Errors
     ///
     /// Returns an error if serialization, I/O, or parsing fails.
     pub async fn send_request(&self, request: &Value) -> Result<Value> {
+        match self.try_send_request(request).await {
+            Ok(value) => Ok(value),
+            Err(_) => {
+                // Process may have died — restart and retry once.
+                tracing::warn!("Game process failed, attempting restart...");
+                self.restart()
+                    .await
+                    .context("Failed to restart game process")?;
+                self.try_send_request(request)
+                    .await
+                    .context("Request failed after restart")
+            }
+        }
+    }
+
+    /// Attempt to send a request without auto-restart.
+    async fn try_send_request(&self, request: &Value) -> Result<Value> {
         let mut guard = self.inner.lock().await;
 
         // Serialize request as single line
-        let mut line =
-            serde_json::to_string(request).context("Failed to serialize request")?;
+        let mut line = serde_json::to_string(request).context("Failed to serialize request")?;
         line.push('\n');
 
         guard
@@ -88,11 +115,7 @@ impl GameProcess {
             .write_all(line.as_bytes())
             .await
             .context("Failed to write request to stdin")?;
-        guard
-            .stdin
-            .flush()
-            .await
-            .context("Failed to flush stdin")?;
+        guard.stdin.flush().await.context("Failed to flush stdin")?;
 
         // Read response line
         let mut response_line = String::new();
@@ -106,8 +129,10 @@ impl GameProcess {
             anyhow::bail!("Game process exited (EOF on stdout)");
         }
 
-        let response: Value = serde_json::from_str(response_line.trim())
-            .context(format!("Failed to parse response: {}", response_line.trim()))?;
+        let response: Value = serde_json::from_str(response_line.trim()).context(format!(
+            "Failed to parse response: {}",
+            response_line.trim()
+        ))?;
 
         Ok(response)
     }
@@ -127,7 +152,7 @@ impl GameProcess {
         let _ = guard.child.wait().await;
 
         // Spawn new process
-        let child = Command::new("cargo")
+        let mut child = Command::new("cargo")
             .args(["run", "--bin", "dcs-app", "--", "serve"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -136,8 +161,8 @@ impl GameProcess {
             .spawn()
             .context("Failed to respawn dcs-app serve")?;
 
-        let stdin = child.stdin.unwrap();
-        let stdout = child.stdout.unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
 
         tokio::spawn(async move {
@@ -152,5 +177,32 @@ impl GameProcess {
         guard.reader = BufReader::new(stdout);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires dcs-app to be built"]
+    async fn spawn_and_ping() {
+        let process = GameProcess::spawn()
+            .await
+            .expect("Failed to spawn dcs-app serve");
+
+        let request = serde_json::json!({"type": "ping"});
+        let response = process
+            .send_request(&request)
+            .await
+            .expect("Failed to send ping request");
+
+        // Verify we got a pong response.
+        let pong_type = response.get("type").and_then(|v| v.as_str());
+        assert_eq!(
+            pong_type,
+            Some("pong"),
+            "Expected 'pong' response, got: {response}"
+        );
     }
 }

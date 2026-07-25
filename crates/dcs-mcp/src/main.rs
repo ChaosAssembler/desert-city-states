@@ -7,6 +7,7 @@
 //! source code has changed (via `cargo run`).
 
 use anyhow::Result;
+use rmcp::ServiceExt;
 use rmcp::transport::io::stdio;
 use tracing_subscriber::EnvFilter;
 
