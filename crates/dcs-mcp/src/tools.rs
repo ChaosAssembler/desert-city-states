@@ -271,8 +271,14 @@ mod tests {
     #[test]
     fn valid_detail_levels() {
         let levels = [
-            "full", "resources", "cities", "units", "routes",
-            "map", "legal_actions", "victory",
+            "full",
+            "resources",
+            "cities",
+            "units",
+            "routes",
+            "map",
+            "legal_actions",
+            "victory",
         ];
         for level in levels {
             assert!(

@@ -12,7 +12,7 @@ pub use error::DcsError;
 pub use process::GameProcess;
 
 use rmcp::handler::server::router::tool::ToolRouter;
-use rmcp::model::{Implementation, ServerInfo};
+use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::{ServerHandler, tool_handler};
 
 /// The main MCP server for Desert City States.
@@ -44,6 +44,7 @@ impl ServerHandler for DcsServer {
                 title: Some("Desert City States".into()),
                 website_url: None,
             },
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
     }

@@ -35,24 +35,24 @@ impl GameProcess {
     ///
     /// Returns an error if the process fails to spawn.
     pub async fn spawn() -> Result<Self> {
-        let mut child = Command::new("cargo")
-            .args(["run", "--bin", "dcs-app", "--", "serve"])
+        let mut cmd = Command::new("cargo");
+        cmd.args(["run", "-p", "dcs-app", "--bin", "dcs-app", "--", "serve"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .context("Failed to spawn dcs-app serve")?;
+            .kill_on_drop(true);
 
-        let stdin = child.stdin.take().unwrap();
-        let stdout = child.stdout.take().unwrap();
-        let stderr = child.stderr.take().unwrap();
+        let mut child = cmd.spawn().context("Failed to spawn dcs-app serve")?;
 
-        // Log stderr output from the game server
+        let stdin = child.stdin.take().expect("stdin should be piped");
+        let stdout = child.stdout.take().expect("stdout should be piped");
+        let stderr = child.stderr.take().expect("stderr should be piped");
+
+        // Forward stderr from the game server to tracing.
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                tracing::debug!(target: "dcs-server", "{}", line);
+                tracing::debug!("[dcs-server stderr] {line}");
             }
         });
 
@@ -89,9 +89,9 @@ impl GameProcess {
     pub async fn send_request(&self, request: &Value) -> Result<Value> {
         match self.try_send_request(request).await {
             Ok(value) => Ok(value),
-            Err(_) => {
+            Err(e) => {
                 // Process may have died — restart and retry once.
-                tracing::warn!("Game process failed, attempting restart...");
+                tracing::warn!("Game process request failed, attempting restart: {e}");
                 self.restart()
                     .await
                     .context("Failed to restart game process")?;
@@ -152,23 +152,24 @@ impl GameProcess {
         let _ = guard.child.wait().await;
 
         // Spawn new process
-        let mut child = Command::new("cargo")
-            .args(["run", "--bin", "dcs-app", "--", "serve"])
+        let mut cmd = Command::new("cargo");
+        cmd.args(["run", "-p", "dcs-app", "--bin", "dcs-app", "--", "serve"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .context("Failed to respawn dcs-app serve")?;
+            .kill_on_drop(true);
 
-        let stdin = child.stdin.take().unwrap();
-        let stdout = child.stdout.take().unwrap();
-        let stderr = child.stderr.take().unwrap();
+        let mut child = cmd.spawn().context("Failed to respawn dcs-app serve")?;
 
+        let stdin = child.stdin.take().expect("stdin should be piped");
+        let stdout = child.stdout.take().expect("stdout should be piped");
+        let stderr = child.stderr.take().expect("stderr should be piped");
+
+        // Forward stderr from the game server to tracing.
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                tracing::debug!(target: "dcs-server", "{}", line);
+                tracing::debug!("[dcs-server stderr] {line}");
             }
         });
 

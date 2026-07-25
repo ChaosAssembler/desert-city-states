@@ -105,7 +105,10 @@ mod tests {
     #[test]
     fn display_parse_error() {
         let err = DcsError::ParseError("unexpected token".into());
-        assert_eq!(format!("{err}"), "Failed to parse response: unexpected token");
+        assert_eq!(
+            format!("{err}"),
+            "Failed to parse response: unexpected token"
+        );
     }
 
     #[test]
@@ -146,7 +149,10 @@ mod tests {
         let dcs = DcsError::ParseError("trailing comma".into());
         let mcp: McpError = dcs.into();
         assert_eq!(mcp.code, ErrorCode(-32602));
-        assert_eq!(mcp.message.as_ref(), "Failed to parse response: trailing comma");
+        assert_eq!(
+            mcp.message.as_ref(),
+            "Failed to parse response: trailing comma"
+        );
     }
 
     #[test]
@@ -168,6 +174,8 @@ mod tests {
     fn anyhow_error_classified_as_communication_error() {
         let anyhow_err = anyhow::anyhow!("connection timed out");
         let dcs: DcsError = anyhow_err.into();
-        assert!(matches!(dcs, DcsError::CommunicationError(ref msg) if msg == "connection timed out"));
+        assert!(
+            matches!(dcs, DcsError::CommunicationError(ref msg) if msg == "connection timed out")
+        );
     }
 }
