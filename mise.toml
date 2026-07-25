@@ -5,6 +5,7 @@
 markdownlint-cli2 = "0.23.0"
 tombi = "1.1.7"
 cargo-insta = "1.48.0"
+"cargo:mcp-discovery" = "latest"
 
 [tasks.build]
 description = "Build the entire Cargo workspace"

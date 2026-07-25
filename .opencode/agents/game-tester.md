@@ -9,6 +9,8 @@ permission:
   skill:
     game-tester: allow
     subagent-autonomy: allow
+tools: # using deprecated tools key to activate MCO tools (permission array does not work)
+  'dcs_*': true
 ---
 
 # Game Tester
