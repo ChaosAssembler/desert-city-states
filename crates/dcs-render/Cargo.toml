@@ -3,8 +3,9 @@ name = "dcs-render"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Macroquad presentation layer for Desert City-States (stub)"
+description = "Macroquad presentation layer for Desert City-States"
 
 [dependencies]
 dcs-core = { path = "../dcs-core" }
 dcs-protocol = { path = "../dcs-protocol" }
+macroquad = "0.4"

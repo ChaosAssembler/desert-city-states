@@ -12,6 +12,8 @@ struct Cli {
 enum Commands {
     /// Start the game server
     Serve,
+    /// Launch the graphical game window
+    Gui,
 }
 
 fn main() {
@@ -23,6 +25,9 @@ fn main() {
                 eprintln!("Server error: {e}");
                 std::process::exit(1);
             }
+        }
+        Commands::Gui => {
+            dcs_render::run(dcs_render::RenderConfig::default());
         }
     }
 }
