@@ -5,7 +5,7 @@
   "mcp": {
     "dcs": {
       "type": "local",
-      "command": ["cargo", "run", "--bin", "dcs-mcp"],
+      "command": ["cargo", "run", "-p", "dcs-mcp"],
       "enabled": true
     }
   },
