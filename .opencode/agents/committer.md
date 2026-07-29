@@ -26,4 +26,5 @@ Load the `git-committing` skill for instructions on how to commit correctly.
 - Never commit secrets or sensitive information
 - If changes are unrelated, ask whether to split into separate commits; if unable to ask, commit separately
 - If intention is unclear, abort and ask for clarification before committing
+- If any staged files appear to be build artifacts (deterministically regenerated files such as compiled binaries, generated code, or files inside output directories), abort the commit and report the suspect files. Do not attempt to update .gitignore — that is outside your scope.
 - Bash is allow-listed to: `git status`, `git diff *`, `git add *`, `git commit *`. Any other command (including `git log`, `ls`) is blocked (deny-by-default).
