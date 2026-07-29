@@ -34,7 +34,7 @@ At session start, load `subagent-autonomy`. You are NOT a delegating agent: do n
 - Never use `cargo doc --open` — it launches a browser. Only the HTML-generating `cargo doc` forms listed above are permitted; they produce docs without opening a browser.
 
 ## Guidelines
-- Prefer `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` as the gate; run `cargo fmt` to auto-apply only when explicitly requested.
+- Prefer `cargo fmt --check --all` and `cargo clippy --workspace --all-targets -- -D warnings` as the gate; run `cargo fmt` to auto-apply only when explicitly requested.
 - When asked to verify dependency or purity boundaries, use `cargo tree` on the relevant crate and confirm its dependencies match the architecture's stated boundaries.
 - Report a clear pass/fail summary with the exact command and its output.
 - Surface warnings, not just errors.
