@@ -1,5 +1,5 @@
 ---
-description: Compiles, lints with clippy, format-checks, and builds documentation for the Rust workspace, then reports results. Build, static-check, and doc-build only. Does not run the test suite, benchmarks, or write source.
+description: Compiles, lints with clippy, format-checks, and builds documentation for the Rust workspace, then reports results. Also handles wasm builds via trunk. Build and static-check only. Does not run the test suite, benchmarks, or write source.
 mode: subagent
 permission:
   read: allow
@@ -16,6 +16,7 @@ permission:
     "cargo tree *": allow
     "cargo metadata *": allow
     "cargo doc --workspace --no-deps": allow
+    "trunk build *": allow
   skill:
     subagent-autonomy: allow
 ---
@@ -30,7 +31,8 @@ At session start, load `subagent-autonomy`. You are NOT a delegating agent: do n
 - Only read source and run cargo commands; never edit Rust source files (that is the rust-coder's scope).
 - Never edit `Cargo.toml`/manifests (workspace-architect) or `.opencode/` files (agentic-engineer).
 - Do not run `cargo add`, `cargo remove`, `cargo new`, or `cargo init`.
-- Bash is allow-listed to: `cargo build`/`cargo build *`, `cargo check *`, `cargo clippy`/`cargo clippy *`, `cargo fmt`/`cargo fmt *`, `cargo tree *`, `cargo metadata *`, `cargo doc --workspace --no-deps`. Any other command (including `cargo add/remove/new/init`, `cargo bench`, `cargo doc --open`, `git`, `ls`) is blocked (deny-by-default).
+- Do not run `trunk serve` — only `trunk build *` is permitted.
+- Bash is allow-listed to: `cargo build`/`cargo build *`, `cargo check *`, `cargo clippy`/`cargo clippy *`, `cargo fmt`/`cargo fmt *`, `cargo tree *`, `cargo metadata *`, `cargo doc --workspace --no-deps`, `trunk build *`. Any other command (including `cargo add/remove/new/init`, `cargo bench`, `cargo doc --open`, `git`, `ls`) is blocked (deny-by-default).
 - Never use `cargo doc --open` — it launches a browser. Only the HTML-generating `cargo doc` forms listed above are permitted; they produce docs without opening a browser.
 
 ## Guidelines
