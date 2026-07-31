@@ -8,18 +8,18 @@ description: Use when creating or maintaining web-facing source files for the Tr
 ## Why this doesn't look like a typical Trunk/wasm-bindgen setup
 
 **macroquad does not use `wasm-bindgen`.** It ships its own JS runtime
-(miniquad's `mq_js_bundle.js`) that loads a plain `wasm32-unknown-unknown`
-binary directly via `load("file.wasm")` — no `cdylib`, no `#[wasm_bindgen]`
-exports, no `#[macroquad::main]` magic needed for wasm specifically. Trunk's
-`rel="rust"` asset pipeline **always** runs `wasm-bindgen` on the compiled
-output with no supported way to disable it — using it on a macroquad binary
-either breaks or requires an unofficial, fragile `sed`-patching community
-shim. Don't use `rel="rust"`.
+(miniquad's `js/gl.js`, part of the `miniquad` crate source) that loads a
+plain `wasm32-unknown-unknown` binary directly via `load("file.wasm")` — no
+`cdylib`, no `#[wasm_bindgen]` exports, no `#[macroquad::main]` magic needed
+for wasm specifically. Trunk's `rel="rust"` asset pipeline **always** runs
+`wasm-bindgen` on the compiled output with no supported way to disable it —
+using it on a macroquad binary either breaks or requires an unofficial,
+fragile `sed`-patching community shim. Don't use `rel="rust"`.
 
 Instead, Trunk is used only as a **dev server / file watcher / static asset
-pipeline**. The actual wasm compile happens in a Trunk `pre_build` hook
-running a plain `cargo build --target wasm32-unknown-unknown`, and the
-resulting `.wasm` is brought into `dist/` via `rel="copy-file"`.
+pipeline**. The actual wasm compile (and vendoring `gl.js` — see below)
+happens in a Trunk `pre_build` hook, and the results are brought into
+`dist/` via `rel="copy-file"`.
 
 ## Preconditions
 
@@ -27,9 +27,18 @@ resulting `.wasm` is brought into `dist/` via `rel="copy-file"`.
   that just calls the renderer's `run()` — no CLI parsing (`clap`), no
   networking/serving code. Cargo auto-discovers `src/bin/*.rs` as binary
   targets; no `[[bin]]` stanza needed.
-- `mq_js_bundle.js` vendored locally (e.g. `web/vendor/mq_js_bundle.js`) —
-  don't rely on the external CDN at build/runtime; browser tests need this
-  to work offline/reliably.
+- **`js/gl.js` generated at build time from the `miniquad` crate's own
+  source, not committed.** Don't hand-vendor a copy of the minified
+  `mq_js_bundle.js` from the external miniquad-samples CDN — it's a large,
+  unreadable blob and its version isn't pinned to what's actually being
+  built. Instead, the `miniquad` crate ships its own unminified
+  `js/gl.js` in its package source (e.g.
+  `~/.cargo/registry/src/*/miniquad-<version>/js/gl.js`), already fetched by
+  cargo and exactly version-matched to `Cargo.lock`. `web/build-wasm.sh`
+  parses the pinned version out of `Cargo.lock`, locates it in the registry
+  cache, and copies it to `web/vendor/gl.js` as part of the `pre_build` hook.
+  `web/vendor/` is gitignored except a tracked `.gitkeep` placeholder (see
+  Common Issues — Trunk needs the directory to already exist at startup).
 - `.cargo/config.toml` sets `--allow-undefined` for the `wasm32-unknown-unknown`
   target (see Common Issues below) — without it, the build fails to link.
 
@@ -37,6 +46,8 @@ resulting `.wasm` is brought into `dist/` via `rel="copy-file"`.
 
 - Never use `std::fs` or `std::process::exit` in wasm-targeted code — they
   panic at runtime in the browser.
+- Don't commit generated/vendored JS blobs (see `js/gl.js` above) — generate
+  them at build time from a version-pinned source instead.
 
 ## Workflow
 
@@ -60,23 +71,28 @@ resulting `.wasm` is brought into `dist/` via `rel="copy-file"`.
      relative to `Trunk.toml`'s own directory, so this lands the build
      output at the repo-root `dist/`, matching `.gitignore`) — no `[build]`
      target pointing at a `Cargo.toml`; we don't use Trunk's Rust pipeline.
-   - `[[hooks]]` with `stage = "pre_build"` running
-     `cargo build --release --target wasm32-unknown-unknown --bin <name> -p <crate>`.
-   - `[watch] ignore = ["../target", "../dist", "../docs", "../.git"]` —
-     **required**, otherwise Trunk's watcher sees the hook's own `cargo build`
-     output land in `target/` and rebuild-loops forever.
+   - `[[hooks]]` with `stage = "pre_build"` running `sh build-wasm.sh` (see
+     Preconditions) — a script rather than an inline `cargo build` because
+     it also handles the `gl.js` vendoring, which must run after `cargo
+     build` has populated the registry cache.
+   - `[watch] ignore = ["../target", "../dist", "../docs", "../.git", "vendor"]`
+     — **required**, otherwise Trunk's watcher sees the hook's own output
+     land in `target/`/`dist/` (paths outside `web/`) *and* in `web/vendor/`
+     (**inside** the watched directory, since that's where `gl.js` gets
+     written) and rebuild-loops forever. The last one is easy to miss
+     because it looks nothing like the usual `target/`-loop symptom — watch
+     for *any* directory a hook writes into, not just the obvious ones.
 2. **`index.html`**, alongside `Trunk.toml` in `web/`:
    - `<canvas id="glcanvas" tabindex="1">` — the id must be exactly
-     `glcanvas`, matching what `mq_js_bundle.js` queries for.
+     `glcanvas`, matching what `gl.js` queries for.
    - `<link data-trunk rel="copy-file" href="../target/wasm32-unknown-unknown/release/<bin>.wasm">`
      to bring the hook's output into `dist/`.
-   - `<link data-trunk rel="copy-file" href="vendor/mq_js_bundle.js">`.
-   - `<script src="mq_js_bundle.js"></script>` then
-     `<script>load("<bin>.wasm");</script>`.
+   - `<link data-trunk rel="copy-file" href="vendor/gl.js">`.
+   - `<script src="gl.js"></script>` then `<script>load("<bin>.wasm");</script>`.
    - CSS: `body { margin:0; overflow:hidden; }`,
      `canvas { display:block; width:100vw; height:100vh; }`.
 3. Build output: `cd web && trunk build` (or `--release`) produces
-   repo-root `dist/` with the `.wasm`, `mq_js_bundle.js`, and `index.html`.
+   repo-root `dist/` with the `.wasm`, `gl.js`, and `index.html`.
    `trunk serve` runs a dev server with rebuild-on-change. Both must be run
    with `web/` as the working directory, per the quirks above.
 4. **Verify no `wasm-bindgen` residue actually made it into the linked
@@ -97,8 +113,8 @@ resulting `.wasm` is brought into `dist/` via `rel="copy-file"`.
 - **Link fails with `undefined symbol: glBindTexture` / `init_webgl` / etc.**:
   miniquad declares JS-host functions (WebGL calls, canvas/window glue) as
   `extern "C"` with no glue generated at compile time — they resolve as wasm
-  imports at instantiation, supplied by `mq_js_bundle.js`, not at link time.
-  Add to `.cargo/config.toml`:
+  imports at instantiation, supplied by `gl.js`, not at link time. Add to
+  `.cargo/config.toml`:
   ```toml
   [target.wasm32-unknown-unknown]
   rustflags = ["-C", "link-args=--allow-undefined"]
@@ -121,6 +137,18 @@ resulting `.wasm` is brought into `dist/` via `rel="copy-file"`.
   nanorand = { version = "0.7", features = ["getrandom"] }  # if used directly
   ```
   This is target-scoped, so native builds are unaffected.
+- **Trunk fails at startup with `error taking the canonical path to the
+  watch ignore path`**: every `[watch] ignore` entry must already exist on
+  disk — Trunk canonicalizes each one at startup, before any hook has run.
+  If a hook generates a directory (e.g. `web/vendor/`, see Preconditions),
+  track it in git via an empty `.gitkeep` placeholder (gitignore the
+  generated contents, not the directory itself) so it survives a fresh
+  clone.
+- **Blank/black canvas with no console errors, `gl`/`wasm_exports` present**:
+  before suspecting the build, check whether the browser tab is stale — a
+  WebGL context reused across several rapid dev-server restarts in the same
+  tab (common while iterating on `Trunk.toml`/hooks) can silently fail to
+  (re-)render even though the module loaded correctly. Test in a fresh tab.
 - **Canvas sizing**: `canvas { display: block; width: 100vw; height: 100vh; }`
   or call `request_screen_size()` in code.
 - **No file:// access**: always serve over HTTP. Trunk's dev server handles
