@@ -15,6 +15,10 @@ postcard = { version = "1", features = ["use-std"] }
 bincode = "1"
 serde_json = "1"
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+nanorand = { version = "0.7", features = ["getrandom"] }
+
 [dev-dependencies]
 proptest = "1"
 insta = { version = "1", features = ["json"] }

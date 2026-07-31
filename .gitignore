@@ -1,5 +1,6 @@
 /.vscode
 /target
 /dist
+/.playwright-mcp
 mise.local.toml
 .claude/settings.local.json

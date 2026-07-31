@@ -1,0 +1,41 @@
+# Trunk config for the macroquad wasm build.
+#
+# macroquad does NOT use wasm-bindgen — it ships its own JS runtime
+# (miniquad's mq_js_bundle.js) that loads a plain wasm32-unknown-unknown
+# binary directly. Trunk's `rel="rust"` asset pipeline always runs
+# wasm-bindgen with no way to disable it, so it is not used here. Trunk is
+# used only as a dev server / file watcher / static asset pipeline: the
+# actual compile happens in the pre_build hook below, and index.html brings
+# the result into dist/ via `rel="copy-file"`.
+#
+# This file lives in web/ — a plain directory with no Cargo.toml of its own —
+# rather than the workspace root or a crate directory, to dodge two Trunk 0.21
+# quirks: (1) it always resolves "the root package of the target crate" via
+# cargo_metadata against the cwd, which fails against the workspace root's
+# virtual manifest (no [package]), even when the Rust pipeline isn't used at
+# all (trunk-rs/trunk#909); (2) if cwd *does* contain a real Cargo.toml, Trunk
+# implicitly adds its own wasm-bindgen Rust build target even with no
+# `rel="rust"` link in index.html — exactly what we're avoiding.
+
+[build]
+target = "index.html"
+dist = "../dist"
+
+[watch]
+# Without this, Trunk's watcher sees the pre_build hook's own `cargo build`
+# output land in target/ and rebuild-loops forever.
+ignore = ["../target", "../dist", "../docs", "../.git"]
+
+[[hooks]]
+stage = "pre_build"
+command = "cargo"
+command_arguments = [
+  "build",
+  "--release",
+  "--target",
+  "wasm32-unknown-unknown",
+  "--bin",
+  "dcs-web",
+  "-p",
+  "dcs-app",
+]

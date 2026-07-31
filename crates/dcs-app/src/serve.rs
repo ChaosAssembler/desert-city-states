@@ -14,8 +14,8 @@ use crate::protocol::*;
 use dcs_core::hex::HexCoord;
 use dcs_core::model::{BUILD_COST, UNIT_TRAIN_COST};
 use dcs_core::{
-    BuildingKind, BuildingKindExt, CityId, Command, GameEvent, GameState, PlayerId,
-    RouteId, ScenarioConfig, TileId, UnitId, UnitKind, UnitKindExt, VictoryKind,
+    BuildingKind, BuildingKindExt, CityId, Command, GameEvent, GameState, PlayerId, RouteId,
+    ScenarioConfig, TileId, UnitId, UnitKind, UnitKindExt,
 };
 use std::io::{self, BufRead, Write};
 use std::path::Path;
@@ -107,7 +107,11 @@ impl ServeState {
         // Resolve the scenario configuration.
         let config = match scenario {
             ScenarioInput::Name(name) => {
-                if name.contains('/') || name.contains('\\') || name.ends_with(".toml") || name.ends_with(".json") {
+                if name.contains('/')
+                    || name.contains('\\')
+                    || name.ends_with(".toml")
+                    || name.ends_with(".json")
+                {
                     match ScenarioConfig::load(Path::new(&name)) {
                         Ok(c) => c,
                         Err(e) => {
@@ -256,7 +260,10 @@ impl ServeState {
                     "player_id {player_id} does not exist (game has {} players)",
                     game.players.len()
                 ),
-                Some(format!("use a player_id between 0 and {}", game.players.len() - 1)),
+                Some(format!(
+                    "use a player_id between 0 and {}",
+                    game.players.len() - 1
+                )),
                 "claim_player",
             );
         }
@@ -278,11 +285,7 @@ impl ServeState {
     /// resources, cities, and units. Fog-of-war filtering is applied:
     /// only tiles in the player's `discovered` set are visible, and
     /// only units/cities on those tiles (or owned by the player) are shown.
-    fn handle_observe(
-        &mut self,
-        player_id: Option<u32>,
-        _detail: Option<String>,
-    ) -> Response {
+    fn handle_observe(&mut self, player_id: Option<u32>, _detail: Option<String>) -> Response {
         // Validate game is loaded.
         let game = match self.ensure_game() {
             Ok(g) => g,
@@ -321,9 +324,7 @@ impl ServeState {
         let cities: Vec<serde_json::Value> = game
             .cities
             .iter()
-            .filter(|c| {
-                c.owner == observer || game.is_city_visible(observer, c.id)
-            })
+            .filter(|c| c.owner == observer || game.is_city_visible(observer, c.id))
             .map(|city| {
                 let tile = &game.tiles[city.tile.0 as usize];
                 serde_json::json!({
@@ -344,9 +345,7 @@ impl ServeState {
         let units: Vec<serde_json::Value> = game
             .units
             .iter()
-            .filter(|u| {
-                u.owner == observer || game.is_unit_visible(observer, u.id)
-            })
+            .filter(|u| u.owner == observer || game.is_unit_visible(observer, u.id))
             .map(|unit| {
                 let tile = &game.tiles[unit.tile.0 as usize];
                 serde_json::json!({
@@ -384,21 +383,31 @@ impl ServeState {
             .collect();
 
         // Determine game-over status and winner from the event log.
-        let is_game_over = game.log.iter().any(|e| matches!(e, GameEvent::Victory { .. }));
-        let winner = game
+        let is_game_over = game
             .log
             .iter()
-            .find_map(|e| {
-                if let GameEvent::Victory { winner, .. } = e {
-                    Some(winner.0)
-                } else {
-                    None
-                }
-            });
+            .any(|e| matches!(e, GameEvent::Victory { .. }));
+        let winner = game.log.iter().find_map(|e| {
+            if let GameEvent::Victory { winner, .. } = e {
+                Some(winner.0)
+            } else {
+                None
+            }
+        });
 
         // Extract victory points (prestige score) and oases controlled for this player.
-        let victory_points = game.victory.prestige_score.get(&observer).copied().unwrap_or(0);
-        let oases_controlled = game.victory.oases_controlled.get(&observer).copied().unwrap_or(0);
+        let victory_points = game
+            .victory
+            .prestige_score
+            .get(&observer)
+            .copied()
+            .unwrap_or(0);
+        let oases_controlled = game
+            .victory
+            .oases_controlled
+            .get(&observer)
+            .copied()
+            .unwrap_or(0);
         let turn_limit = game.scenario.turn_limit;
 
         // Build the observation payload.
@@ -446,11 +455,7 @@ impl ServeState {
     /// [`CommandInput::RaidCity`], [`CommandInput::RaidRoute`],
     /// [`CommandInput::ConnectRoute`], and [`CommandInput::Garrison`].
     /// Other command variants will be added in later waves.
-    fn handle_act(
-        &mut self,
-        player_id: Option<u32>,
-        commands: Vec<CommandInput>,
-    ) -> Response {
+    fn handle_act(&mut self, player_id: Option<u32>, commands: Vec<CommandInput>) -> Response {
         // Validate game is loaded. Mutable access is required for `step`.
         let game = match self.game.as_mut() {
             Some(g) => g,
@@ -488,7 +493,10 @@ impl ServeState {
                     "player_id {effective_player} does not exist (game has {} players)",
                     game.players.len()
                 ),
-                Some(format!("use a player_id between 0 and {}", game.players.len() - 1)),
+                Some(format!(
+                    "use a player_id between 0 and {}",
+                    game.players.len() - 1
+                )),
                 "act",
             );
         }
@@ -532,11 +540,9 @@ impl ServeState {
         // Format ActErrors into human-readable error strings with hints.
         let errors: Vec<String> = act_errors
             .iter()
-            .map(|e| {
-                match &e.hint {
-                    Some(hint) => format!("[{}] {} — hint: {}", e.code, e.message, hint),
-                    None => format!("[{}] {}", e.code, e.message),
-                }
+            .map(|e| match &e.hint {
+                Some(hint) => format!("[{}] {} — hint: {}", e.code, e.message, hint),
+                None => format!("[{}] {}", e.code, e.message),
             })
             .collect();
 
@@ -613,7 +619,10 @@ fn convert_commands(
             }
             CommandInput::MoveUnit { unit, to } => {
                 // Validate the unit exists and is owned by the acting player.
-                let unit_exists = game.units.iter().any(|u| u.id == UnitId(*unit) && u.owner == acting_player);
+                let unit_exists = game
+                    .units
+                    .iter()
+                    .any(|u| u.id == UnitId(*unit) && u.owner == acting_player);
                 if !unit_exists {
                     errors.push(ActError {
                         code: ERR_INVALID_UNIT,
@@ -628,7 +637,10 @@ fn convert_commands(
                     errors.push(ActError {
                         code: ERR_NO_MOVES_LEFT,
                         message: format!("unit {unit} has no moves left this turn"),
-                        hint: Some("units get 1 move per turn; end your turn and wait for the next one".into()),
+                        hint: Some(
+                            "units get 1 move per turn; end your turn and wait for the next one"
+                                .into(),
+                        ),
                     });
                     continue;
                 }
@@ -656,7 +668,10 @@ fn convert_commands(
             }
             CommandInput::FoundCity { unit, tile } => {
                 // Validate the unit exists and is owned by the acting player.
-                let unit_exists = game.units.iter().any(|u| u.id == UnitId(*unit) && u.owner == acting_player);
+                let unit_exists = game
+                    .units
+                    .iter()
+                    .any(|u| u.id == UnitId(*unit) && u.owner == acting_player);
                 if !unit_exists {
                     errors.push(ActError {
                         code: ERR_INVALID_UNIT,
@@ -689,7 +704,10 @@ fn convert_commands(
             }
             CommandInput::TrainUnit { city, kind } => {
                 // Validate the city exists and is owned by the acting player.
-                let city_exists = game.cities.iter().any(|c| c.id == CityId(*city) && c.owner == acting_player);
+                let city_exists = game
+                    .cities
+                    .iter()
+                    .any(|c| c.id == CityId(*city) && c.owner == acting_player);
                 if !city_exists {
                     errors.push(ActError {
                         code: ERR_INVALID_CITY,
@@ -736,7 +754,10 @@ fn convert_commands(
             }
             CommandInput::Build { city, building } => {
                 // Validate the city exists and is owned by the acting player.
-                let city_exists = game.cities.iter().any(|c| c.id == CityId(*city) && c.owner == acting_player);
+                let city_exists = game
+                    .cities
+                    .iter()
+                    .any(|c| c.id == CityId(*city) && c.owner == acting_player);
                 if !city_exists {
                     errors.push(ActError {
                         code: ERR_INVALID_CITY,
@@ -791,7 +812,10 @@ fn convert_commands(
                 let unit_id = match unit {
                     Some(id) => {
                         // Validate the unit exists and is owned by the acting player.
-                        let unit_exists = game.units.iter().any(|u| u.id == UnitId(*id) && u.owner == acting_player);
+                        let unit_exists = game
+                            .units
+                            .iter()
+                            .any(|u| u.id == UnitId(*id) && u.owner == acting_player);
                         if !unit_exists {
                             errors.push(ActError {
                                 code: ERR_INVALID_UNIT,
@@ -820,7 +844,10 @@ fn convert_commands(
                 let unit_id = match unit {
                     Some(id) => {
                         // Validate the unit exists and is owned by the acting player.
-                        let unit_exists = game.units.iter().any(|u| u.id == UnitId(*id) && u.owner == acting_player);
+                        let unit_exists = game
+                            .units
+                            .iter()
+                            .any(|u| u.id == UnitId(*id) && u.owner == acting_player);
                         if !unit_exists {
                             errors.push(ActError {
                                 code: ERR_INVALID_UNIT,
@@ -849,7 +876,10 @@ fn convert_commands(
                 let unit_id = match unit {
                     Some(id) => {
                         // Validate the unit exists and is owned by the acting player.
-                        let unit_exists = game.units.iter().any(|u| u.id == UnitId(*id) && u.owner == acting_player);
+                        let unit_exists = game
+                            .units
+                            .iter()
+                            .any(|u| u.id == UnitId(*id) && u.owner == acting_player);
                         if !unit_exists {
                             errors.push(ActError {
                                 code: ERR_INVALID_UNIT,
@@ -887,7 +917,10 @@ fn convert_commands(
                 let from_city = match from {
                     Some(id) => {
                         // Validate the city exists and is owned by the acting player.
-                        let city_exists = game.cities.iter().any(|c| c.id == CityId(*id) && c.owner == acting_player);
+                        let city_exists = game
+                            .cities
+                            .iter()
+                            .any(|c| c.id == CityId(*id) && c.owner == acting_player);
                         if !city_exists {
                             errors.push(ActError {
                                 code: ERR_INVALID_CITY,
@@ -900,11 +933,7 @@ fn convert_commands(
                     }
                     None => {
                         // Pick the first city owned by the acting player.
-                        match game
-                            .cities
-                            .iter()
-                            .find(|c| c.owner == acting_player)
-                        {
+                        match game.cities.iter().find(|c| c.owner == acting_player) {
                             Some(city) => city.id,
                             None => {
                                 errors.push(ActError {
@@ -931,7 +960,10 @@ fn convert_commands(
                 let unit_id = match unit {
                     Some(id) => {
                         // Validate the unit exists and is owned by the acting player.
-                        let unit_exists = game.units.iter().any(|u| u.id == UnitId(*id) && u.owner == acting_player);
+                        let unit_exists = game
+                            .units
+                            .iter()
+                            .any(|u| u.id == UnitId(*id) && u.owner == acting_player);
                         if !unit_exists {
                             errors.push(ActError {
                                 code: ERR_INVALID_UNIT,
@@ -1090,18 +1122,12 @@ fn game_event_to_output(event: &GameEvent) -> EventOutput {
             "victory",
             serde_json::json!({ "kind": kind.to_string(), "winner": winner.0 }),
         ),
-        GameEvent::TurnAdvanced { turn } => (
-            "turn_advanced",
-            serde_json::json!({ "turn": turn }),
-        ),
+        GameEvent::TurnAdvanced { turn } => ("turn_advanced", serde_json::json!({ "turn": turn })),
         GameEvent::Rejected { command, reason } => (
             "rejected",
             serde_json::json!({ "command": format!("{command:?}"), "reason": reason.to_string() }),
         ),
-        GameEvent::Warn { message } => (
-            "warn",
-            serde_json::json!({ "message": message }),
-        ),
+        GameEvent::Warn { message } => ("warn", serde_json::json!({ "message": message })),
     };
 
     EventOutput {
@@ -1117,6 +1143,7 @@ fn game_event_to_output(event: &GameEvent) -> EventOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dcs_core::VictoryKind;
     use dcs_core::map::new_game;
 
     // -----------------------------------------------------------------------
@@ -1164,7 +1191,10 @@ mod tests {
         let unit_id = unit.id;
         let tile = unit.tile;
         // Found a city using the Scout at its current tile.
-        game.step(&[Command::FoundCity { unit: unit_id, tile }]);
+        game.step(&[Command::FoundCity {
+            unit: unit_id,
+            tile,
+        }]);
         game
     }
 
@@ -1405,9 +1435,7 @@ mod tests {
             commands: vec![CommandInput::EndTurn],
         });
         match resp {
-            Response::Events {
-                turn, errors, ..
-            } => {
+            Response::Events { turn, errors, .. } => {
                 assert!(turn >= 1);
                 assert!(errors.is_empty());
             }
@@ -1579,10 +1607,7 @@ mod tests {
         let (cmds, errors) = convert_commands(
             &[CommandInput::MoveUnit {
                 unit: unit.id.0,
-                to: TileCoord::Hex {
-                    q: 999,
-                    r: -999,
-                },
+                to: TileCoord::Hex { q: 999, r: -999 },
             }],
             &game,
             player,
@@ -2058,8 +2083,7 @@ mod tests {
         });
         match resp {
             Response::PlayerClaimed {
-                player_id,
-                name, ..
+                player_id, name, ..
             } => {
                 assert_eq!(player_id, 0);
                 assert_eq!(name, "Test Agent");
@@ -2088,9 +2112,7 @@ mod tests {
             commands: vec![CommandInput::EndTurn],
         });
         match resp {
-            Response::Events {
-                turn, errors, ..
-            } => {
+            Response::Events { turn, errors, .. } => {
                 assert!(turn >= 1);
                 assert!(errors.is_empty());
             }

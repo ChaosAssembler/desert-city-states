@@ -1,0 +1,8 @@
+# macroquad/miniquad's wasm32-unknown-unknown build declares JS-host
+# functions (WebGL calls, canvas/window glue from mq_js_bundle.js) as
+# `extern "C"` without generating any glue at compile time — they're
+# resolved as wasm imports at instantiation, not at link time. Without
+# --allow-undefined, rust-lld treats them as unresolved symbols and fails
+# the link.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-args=--allow-undefined"]
