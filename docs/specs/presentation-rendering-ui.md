@@ -149,8 +149,12 @@ space) — see §6.4. 8. **Camera transform pop.**
 
 ### 6.3 Fog-of-war overlay (render-only; data from `dcs-core::fog`)
 
-- For tiles **not** in `Player(view_player).discovered`: draw dimmed/blacked-out (no
-  terrain detail). Unexplored tiles yield nothing and cannot be clicked for planning.
+- Tiles render in three tiers, mirroring the cities/routes memory-marker split below:
+  tiles **not** in `Player(view_player).discovered` draw fully blacked-out (no terrain
+  detail) — unexplored tiles yield nothing and cannot be clicked for planning; tiles
+  discovered but currently outside `is_tile_currently_observed(view_player, tile)`
+  (nothing owned is watching them right now) draw at **dimmed** terrain color — remembered
+  layout, may be stale; tiles currently observed draw at full terrain color.
 - **Enemy units** hidden with **NO memory (MVP)** unless `is_unit_visible(view_player, unit)` (current tile discovered) — a unit not currently on a discovered tile is fully hidden with no last-known ghost (fog spec §6.3).
 - **Enemy cities/routes** once any of their tiles is seen are drawn as a **MEMORY MARKER** (dimmed/stale) at their remembered location; their dynamic state (e.g., route Active/Threatened/Severed; city population/specialization) is shown **live only while currently observed** — when not currently observed, render shows them as remembered (dimmed/stale, state unknown). Relic-site markers shown once their tile is discovered.
 - The renderer calls the **same fog queries** as the AI — it never re-implements

@@ -289,15 +289,22 @@ impl Renderer {
     /// Since this runs *after* `on_frame` (see [`run`]), a just-processed
     /// `EndTurn` is already reflected here — the screen always shows the
     /// about-to-act player's fog, matching that existing HUD text exactly.
+    ///
+    /// Tiles render in three tiers, same live/memory split as cities/routes:
+    /// never discovered → flat fog color; discovered but outside current
+    /// live sight → dimmed terrain (remembered, not necessarily still
+    /// accurate); currently observed → full terrain color.
     pub fn draw_frame(&self, state: &GameState) {
         let view_player = state.current_actor;
         set_camera(&self.camera);
         for tile in &state.tiles {
             let (x, y) = tile.coord.to_pixel(self.hex_size);
-            let fill = if state.is_tile_visible(view_player, tile.id) {
+            let fill = if !state.is_tile_visible(view_player, tile.id) {
+                FOG_TILE_COLOR
+            } else if state.is_tile_currently_observed(view_player, tile.id) {
                 terrain_color(tile.terrain)
             } else {
-                FOG_TILE_COLOR
+                dim(terrain_color(tile.terrain))
             };
             draw_hexagon(
                 x,
