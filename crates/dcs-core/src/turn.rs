@@ -122,7 +122,8 @@ impl GameState {
             Command::MoveUnit { unit, to } => {
                 let u = self
                     .units
-                    .get(unit.0 as usize)
+                    .iter()
+                    .find(|u| u.id == *unit)
                     .ok_or(RejectReason::InvalidState)?;
                 if u.owner != actor {
                     return Err(RejectReason::NotYourUnit);
@@ -139,7 +140,8 @@ impl GameState {
             Command::FoundCity { unit, tile } => {
                 let u = self
                     .units
-                    .get(unit.0 as usize)
+                    .iter()
+                    .find(|u| u.id == *unit)
                     .ok_or(RejectReason::InvalidState)?;
                 if u.owner != actor {
                     return Err(RejectReason::NotYourUnit);
@@ -262,7 +264,8 @@ impl GameState {
             Command::Patrol { unit, .. } => {
                 let u = self
                     .units
-                    .get(unit.0 as usize)
+                    .iter()
+                    .find(|u| u.id == *unit)
                     .ok_or(RejectReason::InvalidState)?;
                 if u.owner != actor {
                     return Err(RejectReason::NotYourUnit);
@@ -273,7 +276,8 @@ impl GameState {
             Command::Garrison { unit, .. } => {
                 let u = self
                     .units
-                    .get(unit.0 as usize)
+                    .iter()
+                    .find(|u| u.id == *unit)
                     .ok_or(RejectReason::InvalidState)?;
                 if u.owner != actor {
                     return Err(RejectReason::NotYourUnit);
@@ -284,7 +288,8 @@ impl GameState {
             Command::RaidRoute { unit, .. } => {
                 let u = self
                     .units
-                    .get(unit.0 as usize)
+                    .iter()
+                    .find(|u| u.id == *unit)
                     .ok_or(RejectReason::InvalidState)?;
                 if u.owner != actor {
                     return Err(RejectReason::NotYourUnit);
@@ -295,7 +300,8 @@ impl GameState {
             Command::RaidCity { unit, .. } => {
                 let u = self
                     .units
-                    .get(unit.0 as usize)
+                    .iter()
+                    .find(|u| u.id == *unit)
                     .ok_or(RejectReason::InvalidState)?;
                 if u.owner != actor {
                     return Err(RejectReason::NotYourUnit);
@@ -430,14 +436,14 @@ impl GameState {
 
             Command::Patrol { unit, tile } => {
                 // Cheap: set stance + emit event.
-                if let Some(u) = self.units.get_mut(unit.0 as usize) {
+                if let Some(u) = self.unit_mut(unit) {
                     u.ability = crate::UnitAbility::Patrolling;
                 }
                 vec![GameEvent::UnitPatrolled { unit, tile }]
             }
 
             Command::Garrison { unit, city } => {
-                if let Some(u) = self.units.get_mut(unit.0 as usize) {
+                if let Some(u) = self.unit_mut(unit) {
                     u.ability = crate::UnitAbility::Garrisoned;
                 }
                 vec![GameEvent::UnitGarrisoned { unit, city }]
@@ -456,7 +462,7 @@ impl GameState {
     /// Triggers combat if an enemy unit occupies the destination tile.
     fn resolve_move(&mut self, unit: UnitId, to: TileId, actor: PlayerId) -> Vec<GameEvent> {
         // Re-validate cheaply (resolve_one assumes validated, but guard invariants).
-        if self.units.get(unit.0 as usize).is_none() {
+        if !self.units.iter().any(|u| u.id == unit) {
             return vec![GameEvent::Rejected {
                 command: Command::MoveUnit { unit, to },
                 reason: RejectReason::InvalidState,
@@ -469,7 +475,7 @@ impl GameState {
             }];
         }
 
-        let from_tile = self.units[unit.0 as usize].tile;
+        let from_tile = self.unit(unit).tile;
         let from_coord = self.tiles[from_tile.0 as usize].coord;
         let to_coord = self.tiles[to.0 as usize].coord;
         let radius = self.scenario.map_radius as u32;
@@ -490,7 +496,9 @@ impl GameState {
         // Decrement moves: one point per step, clamped to the unit's remaining pool.
         let steps = path.len().min(u8::MAX as usize) as u8;
         {
-            let u = &mut self.units[unit.0 as usize];
+            let u = self
+                .unit_mut(unit)
+                .expect("unit existence already validated");
             let consumed = steps.min(u.moves_left).max(1);
             u.moves_left = u.moves_left.saturating_sub(consumed);
             u.tile = to;
@@ -527,7 +535,7 @@ impl GameState {
         actor: PlayerId,
     ) -> Vec<GameEvent> {
         // Guard invariant: unit must still exist (validation already passed).
-        if self.units.get(unit.0 as usize).is_none() {
+        if !self.units.iter().any(|u| u.id == unit) {
             return vec![GameEvent::Rejected {
                 command: Command::FoundCity { unit, tile },
                 reason: RejectReason::InvalidState,
@@ -854,6 +862,54 @@ mod tests {
             "founding unit should be consumed"
         );
         assert_eq!(s.tiles[tile.0 as usize].owner, Some(PlayerId(0)));
+    }
+
+    #[test]
+    fn found_city_does_not_corrupt_later_units() {
+        // Regression test: a `UnitId` is not guaranteed to equal its position
+        // in `units` once any unit is removed. Founding a city consumes the
+        // founding Scout via `Vec::retain`, shifting every later unit's
+        // position left by one — if any code still indexed `units` by raw id
+        // instead of looking it up, it would now silently read/mutate the
+        // *next* unit in the Vec (or panic, if the id pointed past the end).
+        let mut s = make_game();
+        let scout = player_scout(&s, PlayerId(0));
+        let scout_tile_id = scout_tile(&s, scout);
+        let guard = test_harness::find_unit(&s, PlayerId(0), UnitKind::CaravanGuard);
+        let other_player_scout = player_scout(&s, PlayerId(1));
+        let other_player_scout_tile = scout_tile(&s, other_player_scout);
+
+        // Found the city, consuming `scout` (the lowest-id, first-position
+        // unit) and shifting every later unit's Vec position down by one.
+        s.step(&[Command::FoundCity {
+            unit: scout,
+            tile: scout_tile_id,
+        }]);
+
+        // Must not panic, and must resolve to the actual guard's tile/owner —
+        // not whatever unit now happens to occupy the guard's old position.
+        let _ = s.is_unit_visible(PlayerId(0), guard);
+        assert_eq!(s.unit(guard).owner, PlayerId(0));
+
+        // Moving the guard (now shifted) must move the guard, not whichever
+        // other unit slid into its old Vec slot.
+        let dest = neighbor_tile(&s, s.unit(guard).tile);
+        let events = s.step(&[Command::MoveUnit {
+            unit: guard,
+            to: dest,
+        }]);
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                GameEvent::UnitMoved { unit, to: t, .. } if *unit == guard && *t == dest
+            )),
+            "expected the guard itself to move"
+        );
+        assert_eq!(s.unit(guard).tile, dest, "guard should be on destination");
+
+        // The other player's scout (also shifted) must be untouched.
+        assert_eq!(s.unit(other_player_scout).tile, other_player_scout_tile);
+        assert_eq!(s.unit(other_player_scout).owner, PlayerId(1));
     }
 
     #[test]

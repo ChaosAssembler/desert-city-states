@@ -556,15 +556,31 @@ impl GameState {
     /// Look up a city by id (invariant: must exist).
     pub fn city(&self, id: CityId) -> &City {
         self.cities
-            .get(id.0 as usize)
+            .iter()
+            .find(|c| c.id == id)
             .expect("invariant: city id must reference a live city")
     }
 
     /// Look up a unit by id (invariant: must exist).
+    ///
+    /// A `UnitId` is **not** guaranteed to equal its position in `units` —
+    /// units can be removed mid-game (a destroyed unit, or one consumed by
+    /// `FoundCity`), which shifts every later unit's position — so this
+    /// linear scan is the only correct way to resolve one; never index
+    /// `self.units` by a raw `UnitId`.
     pub fn unit(&self, id: UnitId) -> &Unit {
         self.units
-            .get(id.0 as usize)
+            .iter()
+            .find(|u| u.id == id)
             .expect("invariant: unit id must reference a live unit")
+    }
+
+    /// Mutable counterpart to [`GameState::unit`]. Returns `None` rather
+    /// than panicking, since callers here are already expected to check
+    /// existence (or accept a no-op) rather than treat a missing unit as an
+    /// invariant violation.
+    pub(crate) fn unit_mut(&mut self, id: UnitId) -> Option<&mut Unit> {
+        self.units.iter_mut().find(|u| u.id == id)
     }
 
     /// Iterate over all units currently on the given tile.
@@ -992,11 +1008,16 @@ impl GameState {
         if attacker_id == defender_id {
             return Vec::new();
         }
-        let attacker_idx = attacker_id.0 as usize;
-        let defender_idx = defender_id.0 as usize;
-        if self.units.get(attacker_idx).is_none() || self.units.get(defender_idx).is_none() {
+        // A unit's id is not guaranteed to equal its position in `units`
+        // (removal — e.g. a unit destroyed earlier this batch, or consumed
+        // by FoundCity — shifts every later unit's position), so this must
+        // be a lookup, not `id.0 as usize` used directly as an index.
+        let Some(attacker_idx) = self.units.iter().position(|u| u.id == attacker_id) else {
             return Vec::new();
-        }
+        };
+        let Some(defender_idx) = self.units.iter().position(|u| u.id == defender_id) else {
+            return Vec::new();
+        };
 
         // Collect stats (avoids borrow issues during the mutation loop).
         let atk_kind = self.units[attacker_idx].kind;
@@ -1075,11 +1096,16 @@ impl GameState {
     /// contest determines the outcome. Otherwise the route auto-cascades.
     pub fn resolve_raid_contest(&mut self, raider_id: UnitId, route_id: RouteId) -> Vec<GameEvent> {
         // Validate inputs.
-        if self.units.get(raider_id.0 as usize).is_none() {
+        let Some(raider) = self
+            .units
+            .iter()
+            .find(|u| u.id == raider_id)
+            .map(|u| (u.owner, u.tile))
+        else {
             return vec![GameEvent::Warn {
                 message: "Raid failed: raider unit not found".into(),
             }];
-        }
+        };
         if self.routes.get(route_id.0 as usize).is_none() {
             return vec![GameEvent::Warn {
                 message: "Raid failed: route not found".into(),
@@ -1087,8 +1113,7 @@ impl GameState {
         }
 
         // Collect data (avoid borrow issues).
-        let raider_owner = self.units[raider_id.0 as usize].owner;
-        let raider_tile = self.units[raider_id.0 as usize].tile;
+        let (raider_owner, raider_tile) = raider;
         let route_owner = self.routes[route_id.0 as usize].owner;
         let route_path: Vec<TileId> = self.routes[route_id.0 as usize].path.clone();
 
@@ -1105,7 +1130,7 @@ impl GameState {
             };
             let raider_atk = UnitKind::Raider.def().atk as f32 * raider_atk_pos;
 
-            let guard_tile = self.units[guard_id.0 as usize].tile;
+            let guard_tile = self.unit(guard_id).tile;
             let guard_tile_terrain = self.tiles[guard_tile.0 as usize].terrain;
             let guard_def_mod = guard_tile_terrain.def().defense_mod as f32;
             let guard_def = UnitKind::CaravanGuard.def().def as f32 * (1.0 + guard_def_mod);
@@ -1195,11 +1220,17 @@ impl GameState {
     /// On attacker win: `city.population -= 1`. If population reaches 0 and
     /// the Raider occupies the city tile, the city is **captured** (owner flip).
     pub fn resolve_city_raid(&mut self, raider_id: UnitId, city_id: CityId) -> Vec<GameEvent> {
-        // Validate inputs.
-        let raider_idx = raider_id.0 as usize;
+        // Validate inputs. A unit's id is not guaranteed to equal its
+        // position in `units` (removal shifts later units), so this must be
+        // a lookup, not `raider_id.0 as usize` used directly as an index.
         let city_idx = city_id.0 as usize;
 
-        if self.units.get(raider_idx).is_none() || self.cities.get(city_idx).is_none() {
+        let Some(raider_idx) = self.units.iter().position(|u| u.id == raider_id) else {
+            return vec![GameEvent::Warn {
+                message: "City raid failed: unit or city not found".into(),
+            }];
+        };
+        if self.cities.get(city_idx).is_none() {
             return vec![GameEvent::Warn {
                 message: "City raid failed: unit or city not found".into(),
             }];
@@ -2705,7 +2736,7 @@ impl GameState {
     /// Called by the resolver after a unit moves (reveal-on-move, spec §6.2) and
     /// after training a new unit.
     pub fn reveal_from_unit(&mut self, unit_id: UnitId) {
-        let u = &self.units[unit_id.0 as usize];
+        let u = self.unit(unit_id);
         let actor = u.owner;
         let tile = u.tile;
         let kind = u.kind;
@@ -2721,8 +2752,7 @@ impl GameState {
     ///
     /// Enemy units in fog are **hidden** — including from the AI (ADR-0004 purity).
     pub fn is_unit_visible(&self, viewer: PlayerId, unit_id: UnitId) -> bool {
-        let u = &self.units[unit_id.0 as usize];
-        self.is_tile_visible(viewer, u.tile)
+        self.is_tile_visible(viewer, self.unit(unit_id).tile)
     }
 
     /// A city is visible if ANY of its tiles (city tile + worked ring) are
@@ -2732,7 +2762,7 @@ impl GameState {
     /// displayed at its remembered location, but its dynamic state is only
     /// live-updated while currently observed.
     pub fn is_city_visible(&self, viewer: PlayerId, city_id: CityId) -> bool {
-        let c = &self.cities[city_id.0 as usize];
+        let c = self.city(city_id);
         // Check city tile.
         if self.is_tile_visible(viewer, c.tile) {
             return true;
@@ -3217,7 +3247,7 @@ impl GameState {
                 if !self.is_route_tile_controlled(route, tid) {
                     // Try to move an idle guard to patrol near this tile.
                     if let Some(&guard_id) = idle_guards.first() {
-                        let guard = &self.units[guard_id.0 as usize];
+                        let guard = self.unit(guard_id);
                         let guard_tile = guard.tile;
                         let guard_coord = self.tiles[guard_tile.0 as usize].coord;
                         let tile_coord = self.tiles[tid.0 as usize].coord;
@@ -3287,7 +3317,7 @@ impl GameState {
             for &tid in &route.path {
                 if !self.is_route_tile_controlled(route, tid) {
                     if let Some(&raider_id) = idle_raiders.first() {
-                        let raider = &self.units[raider_id.0 as usize];
+                        let raider = self.unit(raider_id);
                         let raider_coord = self.tiles[raider.tile.0 as usize].coord;
                         let tile_coord = self.tiles[tid.0 as usize].coord;
 
@@ -3310,7 +3340,7 @@ impl GameState {
         // Try raiding visible enemy cities.
         for &city_id in &sit.visible_enemy_cities {
             if let Some(&raider_id) = idle_raiders.first() {
-                let raider = &self.units[raider_id.0 as usize];
+                let raider = self.unit(raider_id);
                 let city = &self.cities[city_id.0 as usize];
                 let raider_coord = self.tiles[raider.tile.0 as usize].coord;
                 let city_coord = self.tiles[city.tile.0 as usize].coord;

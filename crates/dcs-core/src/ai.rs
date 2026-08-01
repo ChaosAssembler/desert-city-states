@@ -332,7 +332,7 @@ mod tests {
         assert!(
             sit.own_units
                 .iter()
-                .any(|&uid| { s.units[uid.0 as usize].kind == UnitKind::Scout })
+                .any(|&uid| { s.unit(uid).kind == UnitKind::Scout })
         );
     }
 
