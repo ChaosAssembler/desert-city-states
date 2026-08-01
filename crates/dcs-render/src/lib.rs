@@ -2,10 +2,8 @@
 //!
 //! Depends on `dcs-core`, `dcs-protocol`, and `macroquad`.
 
-use dcs_core::map;
 use dcs_core::{
-    GameState, PlayerColor, PlayerId, RouteStatus, ScenarioConfig, TerrainType, TileId, Unit,
-    UnitKind,
+    Command, GameState, PlayerColor, PlayerId, RouteStatus, TerrainType, TileId, Unit, UnitKind,
 };
 use macroquad::prelude::*;
 
@@ -135,6 +133,22 @@ impl Renderer {
         }
 
         self.clamp_target();
+    }
+
+    /// Translates keyboard/pointer input into `Command`s against the current
+    /// `GameState` read-only view (ADR-0003, Rule B — never mutates `state`).
+    ///
+    /// This slice's implementation is a placeholder: there's no
+    /// click-to-select yet, so the only issuable command is `EndTurn` via a
+    /// keypress. Future slices extend this same method (not a new one) with
+    /// real hit-testing against `state` once selection lands.
+    pub fn poll_input(&self, state: &GameState) -> Vec<Command> {
+        let _ = state;
+        if is_key_pressed(KeyCode::Space) {
+            vec![Command::EndTurn]
+        } else {
+            vec![]
+        }
     }
 
     /// Derives macroquad's per-axis `camera.zoom` from `zoom_scale` against
@@ -282,11 +296,22 @@ fn draw_unit_marker(unit: &Unit, x: f32, y: f32, color: Color, hex_size: f32) {
     }
 }
 
-/// Launch the macroquad window and run the render loop.
+/// Launch the macroquad window and run the render loop over a real,
+/// caller-owned `GameState`.
+///
+/// `on_frame` is called once per frame with `&mut GameState` and `&Renderer`
+/// (for `Renderer::poll_input`) — it is the *only* place that should call
+/// `GameState::step`, keeping the actual state mutation in the caller's
+/// code (ADR-0003, Rule C: `dcs-app` owns the main loop) even though this
+/// function drives the frame loop itself.
 ///
 /// This function blocks until the window is closed. It takes over the main
 /// thread — call it only from the GUI entry point, never from async code.
-pub fn run(config: RenderConfig) {
+pub fn run(
+    config: RenderConfig,
+    mut state: GameState,
+    mut on_frame: impl FnMut(&mut GameState, &Renderer) + 'static,
+) {
     macroquad::Window::from_config(
         Conf {
             window_title: config.window_title,
@@ -295,11 +320,6 @@ pub fn run(config: RenderConfig) {
             ..Conf::default()
         },
         async move {
-            // Temporary: `dcs-render` doesn't own real game state (ADR-0003
-            // assigns that to `dcs-app`). This builds a throwaway demo map
-            // just to exercise draw_frame until the orchestration-loop slice
-            // wires in the real GameState + Command dispatch.
-            let state = map::new_game(&ScenarioConfig::mvp_preset(), 42);
             let mut renderer = Renderer {
                 camera: Camera2D::default(),
                 hex_size: HEX_SIZE,
@@ -313,7 +333,15 @@ pub fn run(config: RenderConfig) {
             loop {
                 clear_background(config.background_color);
                 renderer.handle_input();
+                on_frame(&mut state, &renderer);
                 renderer.draw_frame(&state);
+                draw_text(
+                    &format!("Turn {} - Player {}", state.turn, state.current_actor.0),
+                    10.0,
+                    24.0,
+                    24.0,
+                    BLACK,
+                );
                 next_frame().await;
             }
         },

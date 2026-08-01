@@ -8,5 +8,5 @@
 //! trap in the browser console instead.
 
 fn main() {
-    dcs_render::run(dcs_render::RenderConfig::default());
+    dcs_app::orchestrate::run_gui();
 }
