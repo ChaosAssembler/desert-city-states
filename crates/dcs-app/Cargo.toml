@@ -13,6 +13,14 @@ dcs-render = { path = "../dcs-render" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 
+[features]
+# Exposes an in-browser JSON agent bridge (window.dcsAgent.dispatch) so a
+# Playwright-driven agent can reuse the same Request/Response protocol
+# dcs-mcp speaks, against the live GameState the wasm build is rendering.
+# See crates/dcs-app/src/agent_bridge.rs. Not included by default: this is
+# a debug/testing backdoor, not something a shipped build should carry.
+dev-tools = []
+
 [[bin]]
 name = "dcs-app"
 path = "src/main.rs"

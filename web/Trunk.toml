@@ -40,4 +40,10 @@ command_arguments = [
   "dcs-web",
   "-p",
   "dcs-app",
+  # Enables window.dcsAgent (see index.html + dcs-web.rs's agent_ffi module)
+  # — a JSON debug/testing backdoor into the live GameState. This web/
+  # setup only ever drives our own dev/testing loop, not a separate
+  # "production" pipeline; a real one, if ever built, would omit this.
+  "--features",
+  "dev-tools",
 ]

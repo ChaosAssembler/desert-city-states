@@ -44,6 +44,35 @@
       document
         .getElementById("glcanvas")
         .addEventListener("contextmenu", (e) => e.preventDefault());
+
+      // JSON debug/testing bridge into the live GameState (dev-tools Cargo
+      // feature only — see crates/dcs-app/src/agent_bridge.rs and
+      // dcs-web.rs's agent_ffi module). Reuses the same Request/Response
+      // protocol dcs-mcp speaks, so an agent driving this page (e.g. via
+      // Playwright) can set up exact game states without simulating
+      // clicks. No wasm-bindgen: plain manual buffer passing through wasm
+      // linear memory, same mechanism miniquad's own JS glue already uses
+      // for input events.
+      window.dcsAgent = {
+        dispatch(requestObj) {
+          const bytes = new TextEncoder().encode(JSON.stringify(requestObj));
+          const inPtr = wasm_exports.agent_alloc(bytes.length);
+          new Uint8Array(wasm_memory.buffer, inPtr, bytes.length).set(bytes);
+
+          const packed = wasm_exports.agent_dispatch(inPtr, bytes.length);
+          const outPtr = Number(packed >> 32n);
+          const outLen = Number(packed & 0xffffffffn);
+          // Decode into a plain JS string before freeing — the view below
+          // is only valid until agent_free runs.
+          const text = new TextDecoder().decode(
+            new Uint8Array(wasm_memory.buffer, outPtr, outLen),
+          );
+          wasm_exports.agent_free(outPtr, outLen);
+
+          return JSON.parse(text);
+        },
+      };
+
       load("dcs-web.wasm");
     </script>
   </body>

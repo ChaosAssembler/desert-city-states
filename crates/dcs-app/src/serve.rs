@@ -38,8 +38,8 @@ struct ActError {
 
 /// State maintained across requests in a serve session.
 pub struct ServeState {
-    game: Option<GameState>,
-    player_id: Option<PlayerId>,
+    pub(crate) game: Option<GameState>,
+    pub(crate) player_id: Option<PlayerId>,
 }
 
 impl ServeState {
@@ -75,7 +75,7 @@ impl ServeState {
     }
 
     /// Dispatch a parsed [`Request`] to the matching handler.
-    fn dispatch(&mut self, request: Request) -> Response {
+    pub(crate) fn dispatch(&mut self, request: Request) -> Response {
         match request {
             Request::Ping => Response::pong(),
             Request::Help => Response::help_info(),
