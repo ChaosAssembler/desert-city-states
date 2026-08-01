@@ -2,8 +2,10 @@
 //!
 //! Depends on `dcs-core`, `dcs-protocol`, and `macroquad`.
 
+use dcs_core::hex;
 use dcs_core::{
-    Command, GameState, PlayerColor, PlayerId, RouteStatus, TerrainType, TileId, Unit, UnitKind,
+    Command, GameState, PlayerColor, PlayerId, RouteStatus, TerrainType, TileId, Unit, UnitId,
+    UnitKind,
 };
 use macroquad::prelude::*;
 
@@ -36,12 +38,17 @@ const ZOOM_SPEED: f32 = 0.1;
 /// is allowed to go, so you can't zoom into a sliver of a single tile.
 const MAX_ZOOM_MULTIPLIER: f32 = 6.0;
 
+/// Max screen-pixel movement between a left mouse press and release still
+/// counted as a click (selection) rather than a drag (camera pan).
+const CLICK_DRAG_THRESHOLD: f32 = 6.0;
+
 /// Turns a `&GameState` into pixels. Read-only (ADR-0003, Rule B) — no
 /// `&mut GameState` exists here or anywhere outside `dcs-app`.
 ///
-/// `map_bounds`/`zoom_scale`/`min_zoom_scale`/`drag_anchor` are ephemeral
-/// camera-control state (never part of `GameState`, never serialized —
-/// CLAUDE.md's camera/UI state rule).
+/// `map_bounds`/`zoom_scale`/`min_zoom_scale`/`drag_anchor`/`selected_unit`/
+/// `left_press_pos`/`just_clicked` are ephemeral camera- and UI-control state
+/// (never part of `GameState`, never serialized — CLAUDE.md's camera/UI
+/// state rule).
 pub struct Renderer {
     pub camera: Camera2D,
     pub hex_size: f32,
@@ -56,6 +63,17 @@ pub struct Renderer {
     /// `fit_map` last ran — the zoom-out floor.
     min_zoom_scale: f32,
     drag_anchor: Option<Vec2>,
+    /// The currently selected unit, if any (`docs/specs/presentation-rendering-ui.md`
+    /// §6.5's `UiView.selected_unit`). Only unit selection is tracked this
+    /// slice — no `selected_city`/`selected_tile` yet, since nothing uses them.
+    selected_unit: Option<UnitId>,
+    /// Screen position of an in-progress left-button press, for click-vs-drag
+    /// disambiguation against the existing pan-drag behavior in
+    /// `handle_input`. Internal bookkeeping only.
+    left_press_pos: Option<Vec2>,
+    /// Set by `handle_input` for exactly one frame when a left click (not a
+    /// drag) just completed, consumed by `poll_input` the same frame.
+    just_clicked: Option<Vec2>,
 }
 
 impl Renderer {
@@ -104,6 +122,10 @@ impl Renderer {
 
         let mouse_screen = Vec2::from(mouse_position());
 
+        if is_mouse_button_pressed(MouseButton::Left) {
+            self.left_press_pos = Some(mouse_screen);
+        }
+
         if is_mouse_button_down(MouseButton::Left) {
             let current_world = self.camera.screen_to_world(mouse_screen);
             if let Some(anchor) = self.drag_anchor {
@@ -112,6 +134,14 @@ impl Renderer {
             self.drag_anchor = Some(self.camera.screen_to_world(mouse_screen));
         } else {
             self.drag_anchor = None;
+        }
+
+        if is_mouse_button_released(MouseButton::Left) {
+            if let Some(press_pos) = self.left_press_pos.take() {
+                if press_pos.distance(mouse_screen) < CLICK_DRAG_THRESHOLD {
+                    self.just_clicked = Some(mouse_screen);
+                }
+            }
         }
 
         let wheel_y = mouse_wheel().1;
@@ -135,20 +165,53 @@ impl Renderer {
         self.clamp_target();
     }
 
+    /// Converts a screen-space point (e.g. `mouse_position()`) to the hex it
+    /// falls in, via the same cube-round `dcs-core` uses, so clicks map to
+    /// exactly the tile core pathfinding/placement would agree on.
+    pub fn screen_to_hex(&self, screen: Vec2) -> hex::HexCoord {
+        let world = self.camera.screen_to_world(screen);
+        hex::HexCoord::from_pixel((world.x, world.y), self.hex_size)
+    }
+
     /// Translates keyboard/pointer input into `Command`s against the current
-    /// `GameState` read-only view (ADR-0003, Rule B — never mutates `state`).
+    /// `GameState` read-only view (ADR-0003, Rule B — mutates only `self`'s
+    /// own ephemeral UI state, never `state`).
     ///
-    /// This slice's implementation is a placeholder: there's no
-    /// click-to-select yet, so the only issuable command is `EndTurn` via a
-    /// keypress. Future slices extend this same method (not a new one) with
-    /// real hit-testing against `state` once selection lands.
-    pub fn poll_input(&self, state: &GameState) -> Vec<Command> {
-        let _ = state;
-        if is_key_pressed(KeyCode::Space) {
-            vec![Command::EndTurn]
-        } else {
-            vec![]
+    /// Left-click selects a friendly unit at the clicked hex (or deselects,
+    /// if there isn't one); right-click issues a validated `MoveUnit` for
+    /// the current selection. No city/tile selection or other action types
+    /// yet (`FoundCity`, route-planning, `Patrol`, `RaidRoute`/`RaidCity`) —
+    /// future slices extend this same method, not a new one.
+    pub fn poll_input(&mut self, state: &GameState) -> Vec<Command> {
+        if let Some(pos) = self.just_clicked.take() {
+            let hex_coord = self.screen_to_hex(pos);
+            self.selected_unit = state.tile_at(hex_coord).and_then(|tile| {
+                state
+                    .units_on(tile.id)
+                    .find(|u| u.owner == state.current_actor)
+                    .map(|u| u.id)
+            });
         }
+
+        let mut commands = Vec::new();
+
+        if is_key_pressed(KeyCode::Space) {
+            commands.push(Command::EndTurn);
+        }
+
+        if is_mouse_button_pressed(MouseButton::Right) {
+            if let Some(unit) = self.selected_unit {
+                let hex_coord = self.screen_to_hex(Vec2::from(mouse_position()));
+                if let Some(tile) = state.tile_at(hex_coord) {
+                    let cmd = Command::MoveUnit { unit, to: tile.id };
+                    if state.validate(&cmd).is_ok() {
+                        commands.push(cmd);
+                    }
+                }
+            }
+        }
+
+        commands
     }
 
     /// Derives macroquad's per-axis `camera.zoom` from `zoom_scale` against
@@ -198,6 +261,9 @@ impl Renderer {
         draw_routes(state, self.hex_size);
         draw_cities(state, self.hex_size);
         draw_units(state, self.hex_size);
+        if let Some(unit) = self.selected_unit {
+            draw_selection(state, unit, self.hex_size);
+        }
         set_default_camera();
     }
 }
@@ -273,15 +339,30 @@ fn draw_cities(state: &GameState, hex_size: f32) {
 }
 
 fn draw_units(state: &GameState, hex_size: f32) {
-    let city_tiles: std::collections::HashSet<TileId> =
-        state.cities.iter().map(|c| c.tile).collect();
     for unit in &state.units {
-        let (mut x, mut y) = tile_pixel(state, unit.tile, hex_size);
-        if city_tiles.contains(&unit.tile) {
-            x += hex_size * 0.35;
-            y -= hex_size * 0.35;
-        }
+        let (x, y) = unit_marker_pos(state, unit, hex_size);
         draw_unit_marker(unit, x, y, owner_color(state, unit.owner), hex_size);
+    }
+}
+
+/// A unit's marker position, offset off-center when it shares a tile with a
+/// city so the two markers don't fully overlap. Shared by `draw_units` and
+/// `draw_selection` so the highlight ring lines up with the marker exactly.
+fn unit_marker_pos(state: &GameState, unit: &Unit, hex_size: f32) -> (f32, f32) {
+    let (mut x, mut y) = tile_pixel(state, unit.tile, hex_size);
+    if state.cities.iter().any(|c| c.tile == unit.tile) {
+        x += hex_size * 0.35;
+        y -= hex_size * 0.35;
+    }
+    (x, y)
+}
+
+/// Highlight ring around the selected unit's marker (placeholder styling —
+/// the spec doesn't specify selection visuals, `docs/specs/presentation-rendering-ui.md`).
+fn draw_selection(state: &GameState, unit: UnitId, hex_size: f32) {
+    if let Some(unit) = state.units.iter().find(|u| u.id == unit) {
+        let (x, y) = unit_marker_pos(state, unit, hex_size);
+        draw_circle_lines(x, y, hex_size * 0.3, 3.0, YELLOW);
     }
 }
 
@@ -299,18 +380,19 @@ fn draw_unit_marker(unit: &Unit, x: f32, y: f32, color: Color, hex_size: f32) {
 /// Launch the macroquad window and run the render loop over a real,
 /// caller-owned `GameState`.
 ///
-/// `on_frame` is called once per frame with `&mut GameState` and `&Renderer`
-/// (for `Renderer::poll_input`) — it is the *only* place that should call
-/// `GameState::step`, keeping the actual state mutation in the caller's
-/// code (ADR-0003, Rule C: `dcs-app` owns the main loop) even though this
-/// function drives the frame loop itself.
+/// `on_frame` is called once per frame with `&mut GameState` and
+/// `&mut Renderer` (the latter `&mut` for `Renderer::poll_input`, which
+/// updates ephemeral selection state) — it is the *only* place that should
+/// call `GameState::step`, keeping the actual state mutation in the
+/// caller's code (ADR-0003, Rule C: `dcs-app` owns the main loop) even
+/// though this function drives the frame loop itself.
 ///
 /// This function blocks until the window is closed. It takes over the main
 /// thread — call it only from the GUI entry point, never from async code.
 pub fn run(
     config: RenderConfig,
     mut state: GameState,
-    mut on_frame: impl FnMut(&mut GameState, &Renderer) + 'static,
+    mut on_frame: impl FnMut(&mut GameState, &mut Renderer) + 'static,
 ) {
     macroquad::Window::from_config(
         Conf {
@@ -327,13 +409,16 @@ pub fn run(
                 zoom_scale: 1.0,
                 min_zoom_scale: 1.0,
                 drag_anchor: None,
+                selected_unit: None,
+                left_press_pos: None,
+                just_clicked: None,
             };
             renderer.fit_map(&state);
 
             loop {
                 clear_background(config.background_color);
                 renderer.handle_input();
-                on_frame(&mut state, &renderer);
+                on_frame(&mut state, &mut renderer);
                 renderer.draw_frame(&state);
                 draw_text(
                     &format!("Turn {} - Player {}", state.turn, state.current_actor.0),
