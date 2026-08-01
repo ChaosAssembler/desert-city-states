@@ -39,6 +39,11 @@
       crossorigin="anonymous"
     ></script>
     <script>
+      // Right-click is used in-game (move commands), so suppress the
+      // browser's default context menu on the canvas.
+      document
+        .getElementById("glcanvas")
+        .addEventListener("contextmenu", (e) => e.preventDefault());
       load("dcs-web.wasm");
     </script>
   </body>
