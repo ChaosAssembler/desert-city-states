@@ -4,8 +4,8 @@
 
 use dcs_core::hex;
 use dcs_core::{
-    Command, GameState, PlayerColor, PlayerId, RouteStatus, TerrainType, TileId, Unit, UnitId,
-    UnitKind,
+    BuildingKind, CityId, CitySpecialization, Command, GameState, PlayerColor, PlayerId,
+    RouteStatus, TerrainType, TileId, Unit, UnitId, UnitKind,
 };
 use macroquad::prelude::*;
 
@@ -51,13 +51,26 @@ const FOG_TILE_COLOR: Color = Color::from_rgba(24, 22, 20, 255);
 /// route status) isn't directly observed this frame (spec §6.3).
 const DIM_FACTOR: f32 = 0.45;
 
+/// Which city-menu command a selected city is "armed" to issue next
+/// (`KeyCode::T`/`B`/`S`), confirmed by a following number key
+/// (`presentation-rendering-ui.md` §6.4/§6.5 puts these behind a left HUD
+/// panel that doesn't exist yet — this is the interim keybind trigger,
+/// mirroring the spec's own route-plan arm-then-confirm pattern rather than
+/// a flat per-kind keymap).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CityActionKind {
+    Train,
+    Build,
+    Specialize,
+}
+
 /// Turns a `&GameState` into pixels. Read-only (ADR-0003, Rule B) — no
 /// `&mut GameState` exists here or anywhere outside `dcs-app`.
 ///
 /// `map_bounds`/`zoom_scale`/`min_zoom_scale`/`drag_anchor`/`selected_unit`/
-/// `left_press_pos`/`just_clicked` are ephemeral camera- and UI-control state
-/// (never part of `GameState`, never serialized — CLAUDE.md's camera/UI
-/// state rule).
+/// `selected_city`/`armed_city_action`/`left_press_pos`/`just_clicked` are
+/// ephemeral camera- and UI-control state (never part of `GameState`, never
+/// serialized — CLAUDE.md's camera/UI state rule).
 pub struct Renderer {
     pub camera: Camera2D,
     pub hex_size: f32,
@@ -73,9 +86,17 @@ pub struct Renderer {
     min_zoom_scale: f32,
     drag_anchor: Option<Vec2>,
     /// The currently selected unit, if any (`docs/specs/presentation-rendering-ui.md`
-    /// §6.5's `UiView.selected_unit`). Only unit selection is tracked this
-    /// slice — no `selected_city`/`selected_tile` yet, since nothing uses them.
+    /// §6.5's `UiView.selected_unit`). Mutually exclusive with `selected_city`
+    /// — selecting one clears the other, matching the spec's single-`selection`
+    /// `UiView` model.
     selected_unit: Option<UnitId>,
+    /// The currently selected (own) city, if any (`UiView.selected_city`).
+    /// Mutually exclusive with `selected_unit`.
+    selected_city: Option<CityId>,
+    /// Which city-menu command `selected_city` is armed to issue, if any —
+    /// see [`CityActionKind`]. Cleared whenever the selection changes or a
+    /// number key is consumed.
+    armed_city_action: Option<CityActionKind>,
     /// Screen position of an in-progress left-button press, for click-vs-drag
     /// disambiguation against the existing pan-drag behavior in
     /// `handle_input`. Internal bookkeeping only.
@@ -186,29 +207,71 @@ impl Renderer {
     /// `GameState` read-only view (ADR-0003, Rule B — mutates only `self`'s
     /// own ephemeral UI state, never `state`).
     ///
-    /// Left-click selects a friendly unit at the clicked hex (or deselects,
-    /// if there isn't one); right-click issues a validated `MoveUnit` for
-    /// the current selection. No city/tile selection or other action types
-    /// yet (`FoundCity`, route-planning, `Patrol`, `RaidRoute`/`RaidCity`) —
-    /// future slices extend this same method, not a new one.
+    /// Left-click selects a friendly unit at the clicked hex, else a friendly
+    /// city there, else deselects both; right-click issues a validated
+    /// `MoveUnit`/`FoundCity` for a selected unit. With a city selected,
+    /// `T`/`B`/`S` arms Train/Build/Specialize and a following `1`-`9` key
+    /// confirms the Nth kind (declaration order) — see [`CityActionKind`];
+    /// this is a placeholder trigger for what the spec puts behind a left
+    /// HUD panel that doesn't exist yet (§6.4). No route-planning/`Patrol`/
+    /// `RaidRoute`/`RaidCity` yet — future slices extend this same method,
+    /// not a new one.
     pub fn poll_input(&mut self, state: &GameState) -> Vec<Command> {
         if let Some(pos) = self.just_clicked.take() {
             let hex_coord = self.screen_to_hex(pos);
-            self.selected_unit = state
+            let tile = state
                 .tile_at(hex_coord)
-                .filter(|tile| state.is_tile_visible(state.current_actor, tile.id))
-                .and_then(|tile| {
+                .filter(|tile| state.is_tile_visible(state.current_actor, tile.id));
+            // Unit beats city when both are on the same tile (spec §6.5:
+            // "if a friendly unit is there, select it; else select ...
+            // city"); selecting either clears the other.
+            self.selected_unit = tile.and_then(|tile| {
+                state
+                    .units_on(tile.id)
+                    .find(|u| u.owner == state.current_actor)
+                    .map(|u| u.id)
+            });
+            self.selected_city = if self.selected_unit.is_some() {
+                None
+            } else {
+                tile.and_then(|tile| {
                     state
-                        .units_on(tile.id)
-                        .find(|u| u.owner == state.current_actor)
-                        .map(|u| u.id)
-                });
+                        .cities
+                        .iter()
+                        .find(|c| c.tile == tile.id && c.owner == state.current_actor)
+                        .map(|c| c.id)
+                })
+            };
+            self.armed_city_action = None;
         }
 
         let mut commands = Vec::new();
 
         if is_key_pressed(KeyCode::Space) {
             commands.push(Command::EndTurn);
+        }
+
+        if let Some(city_id) = self.selected_city {
+            if is_key_pressed(KeyCode::T) {
+                self.armed_city_action = Some(CityActionKind::Train);
+            } else if is_key_pressed(KeyCode::B) {
+                self.armed_city_action = Some(CityActionKind::Build);
+            } else if is_key_pressed(KeyCode::S) {
+                self.armed_city_action = Some(CityActionKind::Specialize);
+            }
+
+            if let Some(action) = self.armed_city_action {
+                if let Some(n) = pressed_digit_1_to_9() {
+                    if let Some(cmd) = city_action_command(city_id, action, n) {
+                        if state.validate(&cmd).is_ok() {
+                            commands.push(cmd);
+                        }
+                    }
+                    self.armed_city_action = None;
+                }
+            }
+        } else {
+            self.armed_city_action = None;
         }
 
         if is_mouse_button_pressed(MouseButton::Right) {
@@ -322,6 +385,9 @@ impl Renderer {
         if let Some(unit) = self.selected_unit {
             draw_selection(state, unit, self.hex_size);
         }
+        if let Some(city) = self.selected_city {
+            draw_city_selection(state, city, self.hex_size);
+        }
         set_default_camera();
     }
 }
@@ -345,6 +411,64 @@ fn dim(color: Color) -> Color {
         color.b * DIM_FACTOR,
         color.a,
     )
+}
+
+/// Checks number-row keys `1`-`9` (not numpad) for a just-pressed digit,
+/// used to confirm an armed city action (see [`CityActionKind`]).
+fn pressed_digit_1_to_9() -> Option<u8> {
+    const KEYS: [(KeyCode, u8); 9] = [
+        (KeyCode::Key1, 1),
+        (KeyCode::Key2, 2),
+        (KeyCode::Key3, 3),
+        (KeyCode::Key4, 4),
+        (KeyCode::Key5, 5),
+        (KeyCode::Key6, 6),
+        (KeyCode::Key7, 7),
+        (KeyCode::Key8, 8),
+        (KeyCode::Key9, 9),
+    ];
+    KEYS.iter()
+        .find(|(key, _)| is_key_pressed(*key))
+        .map(|(_, n)| *n)
+}
+
+/// Builds the `Command` for `action`'s `n`th variant (1-indexed, matching
+/// each enum's declaration order in `dcs-protocol`), or `None` if `n` is out
+/// of range for that action.
+fn city_action_command(city: CityId, action: CityActionKind, n: u8) -> Option<Command> {
+    match action {
+        CityActionKind::Train => {
+            let kind = match n {
+                1 => UnitKind::Scout,
+                2 => UnitKind::CaravanGuard,
+                3 => UnitKind::Raider,
+                _ => return None,
+            };
+            Some(Command::TrainUnit { city, kind })
+        }
+        CityActionKind::Build => {
+            let building = match n {
+                1 => BuildingKind::Well,
+                2 => BuildingKind::Market,
+                3 => BuildingKind::Granary,
+                4 => BuildingKind::Watchtower,
+                5 => BuildingKind::Caravanserai,
+                6 => BuildingKind::Temple,
+                _ => return None,
+            };
+            Some(Command::Build { city, building })
+        }
+        CityActionKind::Specialize => {
+            let spec = match n {
+                1 => CitySpecialization::TradeHub,
+                2 => CitySpecialization::WellFort,
+                3 => CitySpecialization::Fortress,
+                4 => CitySpecialization::ScholarOutpost,
+                _ => return None,
+            };
+            Some(Command::Specialize { city, spec })
+        }
+    }
 }
 
 fn tile_pixel(state: &GameState, tile: TileId, hex_size: f32) -> (f32, f32) {
@@ -478,6 +602,16 @@ fn draw_selection(state: &GameState, unit: UnitId, hex_size: f32) {
     }
 }
 
+/// Highlight ring around the selected city's marker — same placeholder
+/// styling as [`draw_selection`], fixed radius rather than the city
+/// marker's population-scaled one so it stays visible at any population.
+fn draw_city_selection(state: &GameState, city: CityId, hex_size: f32) {
+    if let Some(city) = state.cities.iter().find(|c| c.id == city) {
+        let (x, y) = tile_pixel(state, city.tile, hex_size);
+        draw_circle_lines(x, y, hex_size * 0.5, 3.0, YELLOW);
+    }
+}
+
 /// Shape per `UnitKind` stands in for the spec's iconographic tokens
 /// (DD §3.4) until real art exists.
 fn draw_unit_marker(unit: &Unit, x: f32, y: f32, color: Color, hex_size: f32) {
@@ -522,6 +656,8 @@ pub fn run(
                 min_zoom_scale: 1.0,
                 drag_anchor: None,
                 selected_unit: None,
+                selected_city: None,
+                armed_city_action: None,
                 left_press_pos: None,
                 just_clicked: None,
             };

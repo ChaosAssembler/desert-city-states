@@ -12,10 +12,10 @@
 
 use crate::protocol::*;
 use dcs_core::hex::HexCoord;
-use dcs_core::model::{BUILD_COST, UNIT_TRAIN_COST};
+use dcs_core::model::{BUILD_COST, SPECIALIZE_COST_INFLUENCE, UNIT_TRAIN_COST};
 use dcs_core::{
-    BuildingKind, BuildingKindExt, CityId, Command, GameEvent, GameState, PlayerId, RouteId,
-    ScenarioConfig, TileId, UnitId, UnitKind, UnitKindExt,
+    BuildingKind, BuildingKindExt, CityId, CitySpecialization, Command, GameEvent, GameState,
+    PlayerId, RouteId, ScenarioConfig, TileId, UnitId, UnitKind, UnitKindExt,
 };
 use std::io::{self, BufRead, Write};
 use std::path::Path;
@@ -449,12 +449,12 @@ impl ServeState {
     /// core [`Command`]s, runs them through [`GameState::step`], and returns the
     /// resulting turn info and any errors.
     ///
-    /// Currently supports [`CommandInput::EndTurn`], [`CommandInput::MoveUnit`],
-    /// [`CommandInput::FoundCity`], [`CommandInput::Build`],
-    /// [`CommandInput::TrainUnit`], [`CommandInput::Patrol`],
+    /// Supports every [`CommandInput`] variant: [`CommandInput::EndTurn`],
+    /// [`CommandInput::MoveUnit`], [`CommandInput::FoundCity`],
+    /// [`CommandInput::Build`], [`CommandInput::TrainUnit`],
+    /// [`CommandInput::Specialize`], [`CommandInput::Patrol`],
     /// [`CommandInput::RaidCity`], [`CommandInput::RaidRoute`],
     /// [`CommandInput::ConnectRoute`], and [`CommandInput::Garrison`].
-    /// Other command variants will be added in later waves.
     fn handle_act(&mut self, player_id: Option<u32>, commands: Vec<CommandInput>) -> Response {
         // Validate game is loaded. Mutable access is required for `step`.
         let game = match self.game.as_mut() {
@@ -808,6 +808,59 @@ fn convert_commands(
                     building: building_kind,
                 });
             }
+            CommandInput::Specialize { city, spec } => {
+                // Validate the city exists and is owned by the acting player.
+                let city_exists = game
+                    .cities
+                    .iter()
+                    .any(|c| c.id == CityId(*city) && c.owner == acting_player);
+                if !city_exists {
+                    errors.push(ActError {
+                        code: ERR_INVALID_CITY,
+                        message: format!("city {city} does not exist or is not yours"),
+                        hint: Some("call observe to list your cities and their IDs".into()),
+                    });
+                    continue;
+                }
+                let specialization = match spec.as_str() {
+                    "TradeHub" => CitySpecialization::TradeHub,
+                    "WellFort" => CitySpecialization::WellFort,
+                    "Fortress" => CitySpecialization::Fortress,
+                    "ScholarOutpost" => CitySpecialization::ScholarOutpost,
+                    other => {
+                        errors.push(ActError {
+                            code: ERR_INVALID_COMMAND,
+                            message: format!("unknown specialization: {other}"),
+                            hint: Some(
+                                "valid kinds are: TradeHub, WellFort, Fortress, ScholarOutpost"
+                                    .into(),
+                            ),
+                        });
+                        continue;
+                    }
+                };
+                // Check that the player has enough influence.
+                let player = &game.players[acting_player.0 as usize];
+                if player.resources.influence < SPECIALIZE_COST_INFLUENCE {
+                    errors.push(ActError {
+                        code: ERR_INSUFFICIENT_RESOURCES,
+                        message: format!(
+                            "not enough influence to specialize: need {SPECIALIZE_COST_INFLUENCE}, have {}",
+                            player.resources.influence
+                        ),
+                        hint: Some(
+                            "earn influence from Temple buildings; \
+                             end your turn to receive income"
+                                .into(),
+                        ),
+                    });
+                    continue;
+                }
+                core_commands.push(Command::Specialize {
+                    city: CityId(*city),
+                    spec: specialization,
+                });
+            }
             CommandInput::Patrol { unit, tile } => {
                 let unit_id = match unit {
                     Some(id) => {
@@ -986,16 +1039,6 @@ fn convert_commands(
                 core_commands.push(Command::Garrison {
                     unit: unit_id,
                     city: CityId(*city),
-                });
-            }
-            other => {
-                errors.push(ActError {
-                    code: ERR_INVALID_COMMAND,
-                    message: format!("unsupported command: {other:?}"),
-                    hint: Some(
-                        "supported commands: EndTurn, MoveUnit, FoundCity, TrainUnit, Build, Patrol, RaidCity, RaidRoute, ConnectRoute, Garrison"
-                            .into(),
-                    ),
                 });
             }
         }
