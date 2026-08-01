@@ -30,35 +30,32 @@ into `dist/` via `rel="copy-file"`.
   that just calls the renderer's `run()` — no CLI parsing (`clap`), no
   networking/serving code. Cargo auto-discovers `src/bin/*.rs` as binary
   targets; no `[[bin]]` stanza needed.
-- **`mq_js_bundle.js` fetched at build time from
-  `https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js`, cached
-  locally, never committed.** This was not the first thing tried here —
-  worth knowing why, since the alternative looks more correct on paper:
-  - The `macroquad` crate ships its own copy of this exact file in its
-    package source (`js/mq_js_bundle.js`), reachable via the local Cargo
-    registry cache and exactly version-matched to `Cargo.lock`. That
-    seemed strictly better (hard version pinning, no network dependency,
-    no "which URL" ambiguity) — but it has a **real, reproducible bug**,
-    confirmed present in both macroquad 0.4.15 and 0.4.16: its `quad_net`
-    plugin section does a bare `register_plugin = ...` assignment with no
-    prior declaration, which throws `ReferenceError: assignment to
-    undeclared variable` under the bundle's own `"use strict"` the instant
-    it loads. It doesn't actually break rendering here (`quad_net` is
-    networking, unused; `load()` is a hoisted function declaration so it's
-    still defined despite the throw) — but it's a real console error every
-    single page load, which defeats the point of an agent watching for
-    console errors as a test signal.
-  - The CDN-hosted copy doesn't have this bug (different, correctly-scoped
-    minification of the same `quad_net` section) and is what the whole
-    macroquad ecosystem actually tests against in practice — official docs
-    universally point there instead of at the published crate's copy.
-    Unpinned ("whatever's currently hosted") is the tradeoff, but it's the
-    one that's known to work.
-  - `web/build-wasm.sh` fetches it into `web/vendor/mq_js_bundle.js` only
-    if not already present (delete that file to force a refresh).
-    `web/vendor/` is gitignored except a tracked `.gitkeep` placeholder
-    (see Common Issues — Trunk needs the directory to already exist at
-    startup).
+- **`macroquad` is pinned to exactly `=0.4.14` in
+  `crates/dcs-render/Cargo.toml`, not `"0.4"`.** 0.4.15 and 0.4.16 (and the
+  current `master` on GitHub) ship a `js/mq_js_bundle.js` with a real,
+  reproducible, currently-unfixed upstream bug
+  (not-fl3/macroquad#1055, open since 2026-07-21): its `quad_net` plugin
+  section does a bare `register_plugin = ...` assignment with no prior
+  declaration, which throws `ReferenceError: assignment to undeclared
+  variable` under the bundle's own `"use strict"` the instant it loads.
+  Doesn't break rendering (`quad_net` is unused networking glue; `load()`
+  is a hoisted function declaration so it's still defined despite the
+  throw) but it's a real console error on every single page load — exactly
+  what an agent watching for console errors as a pass/fail signal would
+  false-positive on. `0.4.14` predates the regressing commit (`fbc3f90`).
+  Bump the pin once #1055 is fixed upstream, and re-verify before trusting
+  a newer bundle (see the `build-wasm.sh` comment and Common Issues below).
+- **`mq_js_bundle.js` generated at build time from the pinned `macroquad`
+  crate's own package source, not committed.** The crate ships this exact
+  file at `js/mq_js_bundle.js` in its published package (already fetched
+  into the local Cargo registry cache, byte-identical — confirmed via md5
+  — to the known-good copy the official docs point people at:
+  `https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js`, as of the
+  pinned `0.4.14`). `web/build-wasm.sh` parses the pinned version out of
+  `Cargo.lock`, locates it in the registry cache, and copies it to
+  `web/vendor/mq_js_bundle.js` as part of the `pre_build` hook.
+  `web/vendor/` is gitignored except a tracked `.gitkeep` placeholder (see
+  Common Issues — Trunk needs the directory to already exist at startup).
 - `.cargo/config.toml` sets `--allow-undefined` for the `wasm32-unknown-unknown`
   target (see Common Issues below) — without it, the build fails to link.
 
@@ -67,11 +64,15 @@ into `dist/` via `rel="copy-file"`.
 - Never use `std::fs` or `std::process::exit` in wasm-targeted code — they
   panic at runtime in the browser.
 - Don't commit generated/vendored JS blobs (`mq_js_bundle.js` above) —
-  fetch/generate them at build time instead. If a "generate from a
-  version-pinned local source" option and a "fetch from the URL everyone
-  actually uses" option disagree, check whether the pinned option is
-  actually correct before assuming pinning wins — see the `register_plugin`
-  bug above for a concrete case where it didn't.
+  generate them at build time instead.
+- Before trusting *any* source for `mq_js_bundle.js` — pinned crate,
+  external URL, or otherwise — verify the actual bytes, don't just assume
+  a version-pinned source is correct because it's pinned. A locally
+  available exact-version match can still ship a real bug nobody hit
+  because nobody sources it that way (see the `register_plugin` bug
+  above). `grep register_plugin web/vendor/mq_js_bundle.js` should show it
+  only as an object-property key (`register_plugin:`), never as a bare
+  `register_plugin=` assignment.
 
 ## Workflow
 
@@ -97,7 +98,8 @@ into `dist/` via `rel="copy-file"`.
      target pointing at a `Cargo.toml`; we don't use Trunk's Rust pipeline.
    - `[[hooks]]` with `stage = "pre_build"` running `sh build-wasm.sh` (see
      Preconditions) — a script rather than an inline `cargo build` because
-     it also handles fetching `mq_js_bundle.js`.
+     it also handles vendoring `mq_js_bundle.js`, which must run after
+     `cargo build` has populated the registry cache.
    - `[watch] ignore = ["../target", "../dist", "../docs", "../.git", "vendor"]`
      — **required**, otherwise Trunk's watcher sees the hook's own output
      land in `target/`/`dist/` (paths outside `web/`) *and* in `web/vendor/`

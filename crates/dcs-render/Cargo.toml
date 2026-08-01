@@ -8,4 +8,11 @@ description = "Macroquad presentation layer for Desert City-States"
 [dependencies]
 dcs-core = { path = "../dcs-core" }
 dcs-protocol = { path = "../dcs-protocol" }
-macroquad = "0.4"
+# Pinned exactly (not "0.4") — 0.4.15/0.4.16 ship a wasm JS bundle with a
+# known, unfixed regression (not-fl3/macroquad#1055): a bare
+# `register_plugin = ...` assignment in the quad_net plugin section throws
+# under "use strict" on every page load. 0.4.14 predates the regressing
+# commit (fbc3f90). Bump this once #1055 is fixed upstream — re-verify with
+# `strings web/vendor/mq_js_bundle.js | grep register_plugin` before trusting
+# a newer version's bundle again (see web/build-wasm.sh, .claude/skills/web-deployment).
+macroquad = "=0.4.14"
