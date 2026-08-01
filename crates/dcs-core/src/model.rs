@@ -24,7 +24,7 @@ use crate::{
     RouteId, RouteStatus, SAVE_VERSION, TileId, UnitId, UnitKind, VersionedSave, VictoryKind,
 };
 use fxhash::{FxHashMap, FxHashSet};
-use nanorand::{Rng, SeedableRng, WyRand};
+use nanorand::{Rng, WyRand};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fmt;
@@ -60,8 +60,11 @@ impl SeededRng {
     /// Rebuild the underlying generator from the seed and fast-forward past
     /// every draw already consumed.
     fn rng(&self) -> WyRand {
-        let mut rng = WyRand::new();
-        rng.reseed(self.seed.to_le_bytes());
+        // `new_seed` builds directly from our u64, unlike `new()` (which
+        // pulls system/browser entropy before being immediately discarded
+        // by a reseed — dead weight natively, and a genuine wasm32 problem:
+        // it requires JS glue this project deliberately doesn't generate).
+        let mut rng = WyRand::new_seed(self.seed);
         for _ in 0..self.counter {
             let _: u32 = rng.generate();
         }

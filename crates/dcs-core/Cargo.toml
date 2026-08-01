@@ -10,14 +10,20 @@ dcs-protocol = { path = "../dcs-protocol" }
 serde = { version = "1", features = ["derive"] }
 fxhash = "0.2"
 thiserror = "1"
-nanorand = { version = "0.7", features = ["std"] }
+# default-features off + only "wyrand": GameState's RNG is always seeded
+# (SeededRng::rng() uses WyRand::new_seed, never the entropy-sourcing
+# WyRand::new()/Default), so nanorand doesn't need "std" or any entropy
+# backend. This also means nanorand never needs the "getrandom" feature,
+# which on wasm32 would otherwise pull in wasm-bindgen/js-sys — those
+# generate init code this project's no-wasm-bindgen wasm build (see
+# .claude/skills/web-deployment) can't satisfy and that crashes at
+# startup the moment any dcs-core symbol is linked, even one unrelated
+# to RNG (confirmed by bisection: referencing a bare TerrainType variant
+# alone reproduced it before this fix).
+nanorand = { version = "0.7", default-features = false, features = ["wyrand"] }
 postcard = { version = "1", features = ["use-std"] }
 bincode = "1"
 serde_json = "1"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
-nanorand = { version = "0.7", features = ["getrandom"] }
 
 [dev-dependencies]
 proptest = "1"
