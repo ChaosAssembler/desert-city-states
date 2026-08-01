@@ -42,6 +42,15 @@ const MAX_ZOOM_MULTIPLIER: f32 = 6.0;
 /// counted as a click (selection) rather than a drag (camera pan).
 const CLICK_DRAG_THRESHOLD: f32 = 6.0;
 
+/// Flat fill for tiles outside the viewer's discovered set — no terrain
+/// detail is shown, per the fog spec (`presentation-rendering-ui.md` §6.3).
+const FOG_TILE_COLOR: Color = Color::from_rgba(24, 22, 20, 255);
+
+/// RGB multiplier used to render a fog "memory marker" — a city/route whose
+/// location is remembered but whose current dynamic state (population,
+/// route status) isn't directly observed this frame (spec §6.3).
+const DIM_FACTOR: f32 = 0.45;
+
 /// Turns a `&GameState` into pixels. Read-only (ADR-0003, Rule B) — no
 /// `&mut GameState` exists here or anywhere outside `dcs-app`.
 ///
@@ -185,12 +194,15 @@ impl Renderer {
     pub fn poll_input(&mut self, state: &GameState) -> Vec<Command> {
         if let Some(pos) = self.just_clicked.take() {
             let hex_coord = self.screen_to_hex(pos);
-            self.selected_unit = state.tile_at(hex_coord).and_then(|tile| {
-                state
-                    .units_on(tile.id)
-                    .find(|u| u.owner == state.current_actor)
-                    .map(|u| u.id)
-            });
+            self.selected_unit = state
+                .tile_at(hex_coord)
+                .filter(|tile| state.is_tile_visible(state.current_actor, tile.id))
+                .and_then(|tile| {
+                    state
+                        .units_on(tile.id)
+                        .find(|u| u.owner == state.current_actor)
+                        .map(|u| u.id)
+                });
         }
 
         let mut commands = Vec::new();
@@ -205,25 +217,32 @@ impl Renderer {
                 if let Some(unit_tile) = unit_tile {
                     let hex_coord = self.screen_to_hex(Vec2::from(mouse_position()));
                     if let Some(tile) = state.tile_at(hex_coord) {
-                        // Right-clicking the selected unit's own tile can
-                        // only sensibly mean "found a city here" (moving a
-                        // unit to the tile it's already on is meaningless);
-                        // any other tile means "move there" — a clean,
-                        // non-overlapping split needing no separate arming
-                        // state.
-                        let cmd = if tile.id == unit_tile {
-                            Command::FoundCity {
-                                unit: unit_id,
-                                tile: tile.id,
+                        // Fog guard: a tile the acting player hasn't
+                        // discovered can't be targeted for planning (spec
+                        // §6.3) — a precondition to attempting a command at
+                        // all, distinct from (and checked before) the game-
+                        // rule legality check below.
+                        if state.is_tile_visible(state.current_actor, tile.id) {
+                            // Right-clicking the selected unit's own tile can
+                            // only sensibly mean "found a city here" (moving
+                            // a unit to the tile it's already on is
+                            // meaningless); any other tile means "move
+                            // there" — a clean, non-overlapping split needing
+                            // no separate arming state.
+                            let cmd = if tile.id == unit_tile {
+                                Command::FoundCity {
+                                    unit: unit_id,
+                                    tile: tile.id,
+                                }
+                            } else {
+                                Command::MoveUnit {
+                                    unit: unit_id,
+                                    to: tile.id,
+                                }
+                            };
+                            if state.validate(&cmd).is_ok() {
+                                commands.push(cmd);
                             }
-                        } else {
-                            Command::MoveUnit {
-                                unit: unit_id,
-                                to: tile.id,
-                            }
-                        };
-                        if state.validate(&cmd).is_ok() {
-                            commands.push(cmd);
                         }
                     }
                 }
@@ -260,13 +279,26 @@ impl Renderer {
             .clamp(self.map_bounds.y, self.map_bounds.y + self.map_bounds.h);
     }
 
-    /// One immediate-mode frame: tiles, routes, cities, units (spec draw
-    /// order, `docs/specs/presentation-rendering-ui.md` §6.2 — fog and HUD
-    /// layers don't exist yet).
+    /// One immediate-mode frame: tiles, routes, cities, units, fog (spec draw
+    /// order, `docs/specs/presentation-rendering-ui.md` §6.2/§6.3 — HUD layer
+    /// doesn't exist yet).
+    ///
+    /// Fog is rendered from `state.current_actor`'s point of view — the same
+    /// "whose turn is it" value `poll_input` already uses for selection
+    /// ownership, and the same value the "Turn N - Player X" HUD text reads.
+    /// Since this runs *after* `on_frame` (see [`run`]), a just-processed
+    /// `EndTurn` is already reflected here — the screen always shows the
+    /// about-to-act player's fog, matching that existing HUD text exactly.
     pub fn draw_frame(&self, state: &GameState) {
+        let view_player = state.current_actor;
         set_camera(&self.camera);
         for tile in &state.tiles {
             let (x, y) = tile.coord.to_pixel(self.hex_size);
+            let fill = if state.is_tile_visible(view_player, tile.id) {
+                terrain_color(tile.terrain)
+            } else {
+                FOG_TILE_COLOR
+            };
             draw_hexagon(
                 x,
                 y,
@@ -274,12 +306,12 @@ impl Renderer {
                 1.0,
                 true, // pointy-top, matching hex::to_pixel's orientation
                 BLACK,
-                terrain_color(tile.terrain),
+                fill,
             );
         }
-        draw_routes(state, self.hex_size);
-        draw_cities(state, self.hex_size);
-        draw_units(state, self.hex_size);
+        draw_routes(state, self.hex_size, view_player);
+        draw_cities(state, self.hex_size, view_player);
+        draw_units(state, self.hex_size, view_player);
         if let Some(unit) = self.selected_unit {
             draw_selection(state, unit, self.hex_size);
         }
@@ -295,6 +327,17 @@ fn terrain_color(terrain: TerrainType) -> Color {
         TerrainType::Ridges => Color::from_rgba(120, 92, 68, 255),
         TerrainType::Ruins => Color::from_rgba(150, 120, 150, 255),
     }
+}
+
+/// Dims a color's RGB channels toward black by [`DIM_FACTOR`], preserving
+/// alpha — used for fog "memory marker" rendering.
+fn dim(color: Color) -> Color {
+    Color::new(
+        color.r * DIM_FACTOR,
+        color.g * DIM_FACTOR,
+        color.b * DIM_FACTOR,
+        color.a,
+    )
 }
 
 fn tile_pixel(state: &GameState, tile: TileId, hex_size: f32) -> (f32, f32) {
@@ -334,11 +377,30 @@ fn draw_dashed_line(x1: f32, y1: f32, x2: f32, y2: f32, dash: f32, gap: f32, col
     }
 }
 
-fn draw_routes(state: &GameState, hex_size: f32) {
+/// Fog-filtered per spec §6.3: routes the viewer has never discovered any
+/// path tile of are skipped entirely (`is_route_visible`); once ever seen, a
+/// route is a permanent memory marker (`dim(owner_color)`, status hidden —
+/// `status` is dynamic and must not leak through color even when dimmed)
+/// unless the viewer currently has direct sight on one of its path tiles,
+/// in which case it's drawn live with its real status color.
+fn draw_routes(state: &GameState, hex_size: f32, view_player: PlayerId) {
     for route in &state.routes {
-        let color = match route.status {
-            RouteStatus::Active => owner_color(state, route.owner),
-            RouteStatus::Threatened | RouteStatus::Severed => RED,
+        let is_own = route.owner == view_player;
+        if !is_own && !state.is_route_visible(view_player, route.id) {
+            continue;
+        }
+        let currently_observed = is_own
+            || route
+                .path
+                .iter()
+                .any(|&t| state.is_tile_visible(view_player, t));
+        let color = if currently_observed {
+            match route.status {
+                RouteStatus::Active => owner_color(state, route.owner),
+                RouteStatus::Threatened | RouteStatus::Severed => RED,
+            }
+        } else {
+            dim(owner_color(state, route.owner))
         };
         for pair in route.path.windows(2) {
             let (x1, y1) = tile_pixel(state, pair[0], hex_size);
@@ -348,17 +410,43 @@ fn draw_routes(state: &GameState, hex_size: f32) {
     }
 }
 
-fn draw_cities(state: &GameState, hex_size: f32) {
+/// Fog-filtered per spec §6.3: cities the viewer has never discovered the
+/// tile or worked ring of are skipped entirely (`is_city_visible`); once
+/// ever seen, a city is a permanent memory marker (dimmed, fixed-size —
+/// `population` is dynamic and must not leak through marker size even when
+/// dimmed) unless the viewer currently has direct sight on the city's own
+/// tile (deliberately not the ring — see `is_city_visible`'s doc comment;
+/// recomputing that ring here would duplicate core geometry), in which case
+/// it's drawn live, scaled by its real population.
+fn draw_cities(state: &GameState, hex_size: f32, view_player: PlayerId) {
     for city in &state.cities {
+        let is_own = city.owner == view_player;
+        if !is_own && !state.is_city_visible(view_player, city.id) {
+            continue;
+        }
+        let currently_observed = is_own || state.is_tile_visible(view_player, city.tile);
         let (x, y) = tile_pixel(state, city.tile, hex_size);
-        let radius = (hex_size * 0.25 + city.population as f32 * 1.5).min(hex_size * 0.8);
-        draw_circle(x, y, radius, owner_color(state, city.owner));
-        draw_circle_lines(x, y, radius, 1.5, BLACK);
+        let base_color = owner_color(state, city.owner);
+        if currently_observed {
+            let radius = (hex_size * 0.25 + city.population as f32 * 1.5).min(hex_size * 0.8);
+            draw_circle(x, y, radius, base_color);
+            draw_circle_lines(x, y, radius, 1.5, BLACK);
+        } else {
+            let radius = hex_size * 0.3;
+            draw_circle(x, y, radius, dim(base_color));
+            draw_circle_lines(x, y, radius, 1.5, dim(BLACK));
+        }
     }
 }
 
-fn draw_units(state: &GameState, hex_size: f32) {
+/// Fog-filtered per spec §6.3: enemy units are drawn only while
+/// `is_unit_visible` holds *this frame* — no memory marker, unlike
+/// cities/routes, since a unit's position isn't static.
+fn draw_units(state: &GameState, hex_size: f32, view_player: PlayerId) {
     for unit in &state.units {
+        if unit.owner != view_player && !state.is_unit_visible(view_player, unit.id) {
+            continue;
+        }
         let (x, y) = unit_marker_pos(state, unit, hex_size);
         draw_unit_marker(unit, x, y, owner_color(state, unit.owner), hex_size);
     }
