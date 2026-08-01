@@ -2748,11 +2748,60 @@ impl GameState {
         self.players[player.0 as usize].discovered.contains(&tile)
     }
 
-    /// A unit is visible only if its **current** tile is discovered by the viewer.
+    /// Tiles currently within `viewer`'s live sight range, computed fresh
+    /// from their units' and cities' *current* positions and sight radii —
+    /// never stored. Distinct from `Player::discovered` (permanent memory,
+    /// only ever grows via [`reveal`](Self::reveal)): this set shrinks the
+    /// instant a revealing unit moves away or a city is lost, which
+    /// `discovered` structurally cannot do. This is what "currently
+    /// observed" means throughout `gameplay-fog-of-war.md` §6.2.1/§6.3/§7.
     ///
-    /// Enemy units in fog are **hidden** — including from the AI (ADR-0004 purity).
+    /// Modeled on [`zone_of_control`](Self::zone_of_control)'s same
+    /// pure/unstored/freshly-computed shape.
+    pub fn tiles_in_sight(&self, viewer: PlayerId) -> FxHashSet<TileId> {
+        let mut sight = FxHashSet::default();
+        for unit in self.units.iter().filter(|u| u.owner == viewer) {
+            let coord = self.tiles[unit.tile.0 as usize].coord;
+            for hex in coord.range(unit.kind.sight()) {
+                if let Some(&tid) = self.tile_index.get(&hex) {
+                    sight.insert(tid);
+                }
+            }
+        }
+        for city in self.cities.iter().filter(|c| c.owner == viewer) {
+            let coord = self.tiles[city.tile.0 as usize].coord;
+            for hex in coord.range(self.city_sight(city.id)) {
+                if let Some(&tid) = self.tile_index.get(&hex) {
+                    sight.insert(tid);
+                }
+            }
+            if city.buildings.contains(&BuildingKind::Watchtower) {
+                for hex in coord.range(crate::fog::SIGHT_WATCHTOWER) {
+                    if let Some(&tid) = self.tile_index.get(&hex) {
+                        sight.insert(tid);
+                    }
+                }
+            }
+        }
+        sight
+    }
+
+    /// Is `tile` within `viewer`'s live sight range **right now**? Distinct
+    /// from [`is_tile_visible`](Self::is_tile_visible) (permanent memory) —
+    /// see [`tiles_in_sight`](Self::tiles_in_sight).
+    pub fn is_tile_currently_observed(&self, viewer: PlayerId, tile: TileId) -> bool {
+        self.tiles_in_sight(viewer).contains(&tile)
+    }
+
+    /// A unit is visible only if its **current** tile is in the viewer's
+    /// live sight range right now (not merely ever discovered).
+    ///
+    /// Enemy units in fog are **hidden** — including from the AI (ADR-0004
+    /// purity) — and this hiding is genuinely dynamic: a unit that leaves
+    /// the viewer's live sight becomes hidden again, even on a tile the
+    /// viewer discovered long ago (spec §6.2.1/§7).
     pub fn is_unit_visible(&self, viewer: PlayerId, unit_id: UnitId) -> bool {
-        self.is_tile_visible(viewer, self.unit(unit_id).tile)
+        self.is_tile_currently_observed(viewer, self.unit(unit_id).tile)
     }
 
     /// A city is visible if ANY of its tiles (city tile + worked ring) are
@@ -2760,7 +2809,8 @@ impl GameState {
     ///
     /// Once seen, stays visible as a memory marker (spec §6.3): the city remains
     /// displayed at its remembered location, but its dynamic state is only
-    /// live-updated while currently observed.
+    /// live-updated while currently observed — see
+    /// [`is_city_currently_observed`](Self::is_city_currently_observed).
     pub fn is_city_visible(&self, viewer: PlayerId, city_id: CityId) -> bool {
         let c = self.city(city_id);
         // Check city tile.
@@ -2779,9 +2829,21 @@ impl GameState {
         false
     }
 
+    /// Is the city's *dynamic* state (population, specialization, ...)
+    /// currently live, as opposed to a remembered/stale marker? True only
+    /// while the viewer has direct live sight on the city's own tile —
+    /// deliberately not the worked ring used by [`is_city_visible`](Self::is_city_visible)'s
+    /// "ever seen" check, to avoid duplicating that ring geometry a second
+    /// time (ADR-0003: a single source of truth per visibility rule).
+    pub fn is_city_currently_observed(&self, viewer: PlayerId, city_id: CityId) -> bool {
+        self.is_tile_currently_observed(viewer, self.city(city_id).tile)
+    }
+
     /// A route is visible if ANY path tile is discovered.
     ///
-    /// Static memory marker: once seen, stays visible (spec §6.3).
+    /// Static memory marker: once seen, stays visible (spec §6.3). See
+    /// [`is_route_currently_observed`](Self::is_route_currently_observed)
+    /// for whether its dynamic `status` is currently live.
     pub fn is_route_visible(&self, viewer: PlayerId, route_id: RouteId) -> bool {
         let r = &self.routes[route_id.0 as usize];
         for &tid in &r.path {
@@ -2790,6 +2852,16 @@ impl GameState {
             }
         }
         false
+    }
+
+    /// Is the route's *dynamic* state (`status`) currently live, as opposed
+    /// to a remembered/stale marker? True while the viewer has direct live
+    /// sight on any path tile right now.
+    pub fn is_route_currently_observed(&self, viewer: PlayerId, route_id: RouteId) -> bool {
+        self.routes[route_id.0 as usize]
+            .path
+            .iter()
+            .any(|&t| self.is_tile_currently_observed(viewer, t))
     }
 
     /// Re-scan all owned cities and their buildings/specializations to refresh fog.
@@ -2985,11 +3057,14 @@ impl GameState {
         let scout_coord = self.tiles[scout_tile.0 as usize].coord;
         let radius = self.scenario.map_radius as u32;
 
-        // Also consider the scout's own tile
+        // Also consider the scout's own tile. Same fog-aware city check as
+        // the neighbor loop below — a fogged enemy city must not block this.
         let own_tile_id = self.tile_index[&scout_coord];
         let own_tile = &self.tiles[own_tile_id.0 as usize];
         if own_tile.terrain == TerrainType::Oasis
-            && !self.cities.iter().any(|c| c.tile == own_tile_id)
+            && !self.cities.iter().any(|c| {
+                c.tile == own_tile_id && (c.owner == player || self.is_city_visible(player, c.id))
+            })
         {
             let is_available = own_tile.owner.is_none() || own_tile.owner == Some(player);
             if is_available {
@@ -3014,8 +3089,13 @@ impl GameState {
                 if tile.terrain != TerrainType::Oasis {
                     continue;
                 }
-                // Must not already have a city.
-                if self.cities.iter().any(|c| c.tile == tile_id) {
+                // Must not already have a city — but a fogged enemy city
+                // doesn't block this: the AI must not see through fog
+                // (ADR-0004 purity), so only an own or currently-visible
+                // enemy city counts.
+                if self.cities.iter().any(|c| {
+                    c.tile == tile_id && (c.owner == player || self.is_city_visible(player, c.id))
+                }) {
                     continue;
                 }
                 // Must not be owned by an enemy.

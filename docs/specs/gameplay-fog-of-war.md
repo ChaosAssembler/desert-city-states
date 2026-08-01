@@ -23,7 +23,10 @@ once any of their tiles is seen). Pure data in core; rendering is a separate ove
 - `Player::discovered: FxHashSet<TileId>` as the visibility source of truth (core-data-model §4.7).
 - Reveal sources & radii (Scout 3, Caravan Guard 1, Raider 2, City 2, Scholar +1, Watchtower 2).
 - Reveal-on-move / reveal-on-found / reveal-on-route-create.
-- Query helpers: `is_tile_visible`, `is_unit_visible`, `is_city_visible`, `is_route_visible`.
+- Query helpers: `is_tile_visible`, `is_unit_visible`, `is_city_visible`, `is_route_visible`
+  (permanent memory tier), and `tiles_in_sight`, `is_tile_currently_observed`,
+  `is_city_currently_observed`, `is_route_currently_observed` (live-sight tier —
+  computed fresh each call, never stored).
 - Serialization of visibility (it's just `Player.discovered`, already serde).
 - Interaction contract with rendering (read-only; noted).
 
@@ -65,10 +68,24 @@ pub fn reveal(state: &mut GameState, player: PlayerId, center: TileId, r: u32)
 /// Reveal-on-move: called by resolve_move after a unit stops (units spec §6.1).
 pub fn reveal_from_unit(state: &mut GameState, unit: UnitId);
 
-/// Query: is `tile` currently in `player`'s discovered set?
+/// Query: is `tile` currently in `player`'s discovered set? Permanent
+/// memory — once true, true forever (this is NOT "currently observed";
+/// see `is_tile_currently_observed` below).
 pub fn is_tile_visible(state: &GameState, player: PlayerId, tile: TileId) -> bool;
 
-/// Query: a UNIT is visible only if its CURRENT tile is discovered
+/// Tiles currently within `viewer`'s LIVE sight range, computed fresh each
+/// call from their units' and cities' *current* positions and sight radii
+/// — never stored, unlike `Player::discovered`. This is the actual
+/// mechanism behind "currently observed" throughout §6.2.1/§6.3/§7 below.
+pub fn tiles_in_sight(state: &GameState, viewer: PlayerId) -> FxHashSet<TileId>;
+
+/// Query: is `tile` within `viewer`'s LIVE sight range right now? Distinct
+/// from `is_tile_visible` (permanent memory) — this one can go from true
+/// back to false, e.g. once the unit that revealed it moves away.
+pub fn is_tile_currently_observed(state: &GameState, viewer: PlayerId, tile: TileId) -> bool;
+
+/// Query: a UNIT is visible only if its CURRENT tile is within the viewer's
+/// LIVE sight right now — genuinely dynamic, not `discovered` membership
 /// (enemy units in fog are HIDDEN — including from the AI, DD §12).
 pub fn is_unit_visible(state: &GameState, viewer: PlayerId, unit: UnitId) -> bool;
 
@@ -77,8 +94,18 @@ pub fn is_unit_visible(state: &GameState, viewer: PlayerId, unit: UnitId) -> boo
 /// once revealed (DD §12).
 pub fn is_city_visible(state: &GameState, viewer: PlayerId, city: CityId) -> bool;
 
+/// Query: is a CITY's dynamic state (population, specialization, ...)
+/// currently live? True only while the viewer has live sight on the
+/// city's own tile — see `is_city_visible` for the separate "ever seen at
+/// all" permanent gate.
+pub fn is_city_currently_observed(state: &GameState, viewer: PlayerId, city: CityId) -> bool;
+
 /// Query: a ROUTE is visible if ANY path tile is discovered (static => permanent).
 pub fn is_route_visible(state: &GameState, viewer: PlayerId, route: RouteId) -> bool;
+
+/// Query: is a ROUTE's dynamic state (`status`) currently live? True while
+/// the viewer has live sight on any path tile right now.
+pub fn is_route_currently_observed(state: &GameState, viewer: PlayerId, route: RouteId) -> bool;
 ```
 
 ## 6. Algorithms
@@ -122,12 +149,16 @@ review** and are recorded here so they are not re-litigated during implementatio
   only the destination's sight radius is pinged. This was confirmed verbatim as
   "keep ping-at-stop, no path reveal." (See also §6.2 reveal-on-move bullet.)
 - **No memory marker for enemy UNITS (MVP); cities & routes use a MEMORY MARKER:**
-  MVP has **NO memory** of last-known enemy **unit** positions — a unit that leaves
-  the viewer's `discovered` set is simply **hidden** with no fading "last seen"
-  trace (a deliberate first-pass simplification). **Cities and routes**, by
-  contrast, use a **MEMORY MARKER**: once any of their tiles is discovered they
-  remain shown at their remembered location, dimmed/stale, with dynamic state
-  live-updated only while currently observed (see §6.3).
+  MVP has **NO memory** of last-known enemy **unit** positions — a unit that
+  leaves the viewer's **live sight** (`tiles_in_sight`, not the permanent
+  `discovered` set — a unit's tile can easily be inside `discovered` from a
+  much earlier reveal while nothing is currently watching it) is simply
+  **hidden** with no fading "last seen" trace (a deliberate first-pass
+  simplification). **Cities and routes**, by contrast, use a **MEMORY MARKER**:
+  once any of their tiles is discovered they remain shown at their remembered
+  location, dimmed/stale, with dynamic state live-updated only while currently
+  observed — i.e. `is_city_currently_observed`/`is_route_currently_observed`
+  (see §6.3).
 
 ### 6.3 What each player can / cannot see (DD §12)
 
@@ -140,20 +171,23 @@ review** and are recorded here so they are not re-litigated during implementatio
   is rejected (`Rejected(Blocked)`) if `safe_route` would need to traverse a tile
   not in the actor's `discovered` set. This keeps "you must scout before you can
   caravan there" true.)
-- **Enemy units:** hidden unless their **current** tile is discovered by the viewer
-  (`is_unit_visible` uses current position only). **This applies to the AI too** —
-  AI planning (later spec) may only "see" units on tiles in its own `discovered`
-  set, preventing AI cheating/omniscence by construction (ADR-0004 purity).
+- **Enemy units:** hidden unless their **current** tile is within the viewer's
+  **live sight right now** (`is_unit_visible`, backed by `tiles_in_sight` —
+  *not* the permanent `discovered` set, which can't distinguish "seen once,
+  long ago" from "watched right now"). **This applies to the AI too** —
+  AI planning may only "see" units currently in its own live sight,
+  preventing AI cheating/omniscence by construction (ADR-0004 purity).
 - **Enemy cities/routes (memory marker):** once **any** of their tiles is discovered,
   they become a **MEMORY MARKER** — they **remain displayed** on the player's map at
   their remembered location, but are shown as **memory/stale**. Their dynamic state
   (e.g., route `Active`/`Threatened`/`Severed`; city `population`/`specialization`)
-  is **only live-updated while the entity is currently observed** (the entity is on a
-  discovered tile). When **not currently observed**, the marker is shown as remembered
-  (dimmed/stale, state unknown). This **replaces** the earlier "permanently visible
-  with live state" rule: `is_city_visible`/`is_route_visible` still derive from the
-  `discovered` set (a seen structure is never fully un-seen), but the *state* shown is
-  stale unless currently observed.
+  is **only live-updated while the entity is currently observed** — i.e.
+  `is_city_currently_observed`/`is_route_currently_observed` (live sight on the
+  city's own tile / any path tile), a genuinely separate, fluctuating query from
+  `is_city_visible`/`is_route_visible`'s permanent "ever seen at all" gate. When
+  **not currently observed**, the marker is shown as remembered (dimmed/stale,
+  state unknown) — and this can toggle back to live again the moment sight
+  returns, not just decay one-way.
 - **Ruins / relic sites:** revealed like any tile; their `is_relic_site` flag is
   visible once the tile is discovered (V3 tracking, DD §13).
 
@@ -166,9 +200,11 @@ review** and are recorded here so they are not re-litigated during implementatio
 
 ## 7. Edge Cases / Invariants
 
-- **Memory marker (not live permanence):** a city/route once seen stays **displayed** as a memory marker even if the viewer's units later leave — `is_city_visible`/`is_route_visible` never "un-see" a previously discovered static structure. The marker persists at its remembered location, but its dynamic state is only refreshed while currently observed; when not observed it is shown dimmed/stale (state unknown). *(This replaces the earlier "permanently visible with live state" rule.)*
-- **Unit hide-on-move:** an enemy unit that moves out of your discovered tiles
-  becomes hidden again (current-position check).
+- **Memory marker (not live permanence):** a city/route once seen stays **displayed** as a memory marker even if the viewer's units later leave — `is_city_visible`/`is_route_visible` never "un-see" a previously discovered static structure. The marker persists at its remembered location, but its dynamic state (via `is_city_currently_observed`/`is_route_currently_observed`, backed by `tiles_in_sight`) is only refreshed while currently observed; when not observed it is shown dimmed/stale (state unknown).
+- **Unit hide-on-move:** an enemy unit that moves out of your **live sight**
+  (`tiles_in_sight`) becomes hidden again — a genuine current-sight check,
+  not a `discovered`-membership check (which could never un-reveal a tile,
+  so could never actually hide a unit standing on previously-scouted ground).
 - **AI parity:** the AI uses the *same* `is_unit_visible`/`is_city_visible`
   queries — no privileged sight. Omniscience is impossible by construction.
 - **Watchtower/Scholar re-reveal:** handled at `advance_turn` re-scan so late
@@ -183,8 +219,9 @@ review** and are recorded here so they are not re-litigated during implementatio
 - [ ] Scout reveals radius 3, Guard 1, Raider 2, City 2, Scholar-city 3, Watchtower radius 2 around its tile.
 - [ ] Reveal-on-move reveals only the stop tile's radius (not the whole path).
 - [ ] Found city reveals `range(city_tile, city_sight)`.
-- [ ] `is_unit_visible` true only if unit's **current** tile discovered (enemy in fog hidden, incl. from AI).
+- [ ] `is_unit_visible` true only if unit's **current** tile is within the viewer's *live* sight (`tiles_in_sight`) right now — not merely ever `discovered` (enemy in fog hidden, incl. from AI); becomes false again once nothing is watching, even on long-discovered ground.
 - [ ] `is_city_visible` / `is_route_visible` true if ANY of their tiles discovered, and stay true thereafter (static permanence).
+- [ ] `is_city_currently_observed` / `is_route_currently_observed` true only while the viewer has *live* sight on the city's own tile / any route path tile right now — toggles both ways as sight moves on and off, independent of the permanent `is_city_visible`/`is_route_visible` gate above.
 - [ ] `ConnectRoute` rejected if `safe_route` would cross an unexplored tile for the actor.
 - [ ] Unexplored tiles yield nothing (economy skips them) and block planning.
 - [ ] `Player::discovered` round-trips through serde; same seed+commands ⇒ identical fog (determinism).

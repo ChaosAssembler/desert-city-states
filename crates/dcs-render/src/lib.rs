@@ -379,21 +379,19 @@ fn draw_dashed_line(x1: f32, y1: f32, x2: f32, y2: f32, dash: f32, gap: f32, col
 
 /// Fog-filtered per spec §6.3: routes the viewer has never discovered any
 /// path tile of are skipped entirely (`is_route_visible`); once ever seen, a
-/// route is a permanent memory marker (`dim(owner_color)`, status hidden —
-/// `status` is dynamic and must not leak through color even when dimmed)
-/// unless the viewer currently has direct sight on one of its path tiles,
-/// in which case it's drawn live with its real status color.
+/// route stays visible as a memory marker (`dim(owner_color)`, status hidden
+/// — `status` is dynamic and must not leak through color even when dimmed)
+/// unless the viewer currently has live sight on one of its path tiles
+/// (`is_route_currently_observed`), in which case it's drawn live with its
+/// real status color — this genuinely toggles both ways as sight moves on
+/// and off the route, not a one-way ratchet.
 fn draw_routes(state: &GameState, hex_size: f32, view_player: PlayerId) {
     for route in &state.routes {
         let is_own = route.owner == view_player;
         if !is_own && !state.is_route_visible(view_player, route.id) {
             continue;
         }
-        let currently_observed = is_own
-            || route
-                .path
-                .iter()
-                .any(|&t| state.is_tile_visible(view_player, t));
+        let currently_observed = is_own || state.is_route_currently_observed(view_player, route.id);
         let color = if currently_observed {
             match route.status {
                 RouteStatus::Active => owner_color(state, route.owner),
@@ -412,19 +410,19 @@ fn draw_routes(state: &GameState, hex_size: f32, view_player: PlayerId) {
 
 /// Fog-filtered per spec §6.3: cities the viewer has never discovered the
 /// tile or worked ring of are skipped entirely (`is_city_visible`); once
-/// ever seen, a city is a permanent memory marker (dimmed, fixed-size —
+/// ever seen, a city stays visible as a memory marker (dimmed, fixed-size —
 /// `population` is dynamic and must not leak through marker size even when
-/// dimmed) unless the viewer currently has direct sight on the city's own
-/// tile (deliberately not the ring — see `is_city_visible`'s doc comment;
-/// recomputing that ring here would duplicate core geometry), in which case
-/// it's drawn live, scaled by its real population.
+/// dimmed) unless the viewer currently has live sight on the city's own
+/// tile (`is_city_currently_observed`), in which case it's drawn live,
+/// scaled by its real population — this genuinely toggles both ways as
+/// sight moves on and off the city, not a one-way ratchet.
 fn draw_cities(state: &GameState, hex_size: f32, view_player: PlayerId) {
     for city in &state.cities {
         let is_own = city.owner == view_player;
         if !is_own && !state.is_city_visible(view_player, city.id) {
             continue;
         }
-        let currently_observed = is_own || state.is_tile_visible(view_player, city.tile);
+        let currently_observed = is_own || state.is_city_currently_observed(view_player, city.id);
         let (x, y) = tile_pixel(state, city.tile, hex_size);
         let base_color = owner_color(state, city.owner);
         if currently_observed {

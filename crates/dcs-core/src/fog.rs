@@ -166,6 +166,100 @@ mod tests {
     }
 
     #[test]
+    fn is_unit_visible_hides_after_revealer_moves_away() {
+        // Regression test for the live-sight vs. permanent-memory split:
+        // `is_unit_visible` must reflect *live* sight, not `discovered`
+        // membership, which only ever grows and can never reflect a
+        // revealer having moved on.
+        let mut s = make_game();
+        let scout = UnitId(0);
+        let enemy_coord = crate::hex::HexCoord { q: 1, r: 0 };
+        let enemy_tile = s.tile_index[&enemy_coord];
+        let enemy =
+            test_harness::create_unit_with_hp(&mut s, PlayerId(1), UnitKind::Scout, enemy_tile, 3);
+
+        // Reveal via the scout's own sight radius, from its starting position.
+        s.reveal_from_unit(scout);
+        assert!(
+            s.is_tile_visible(PlayerId(0), enemy_tile),
+            "sanity: tile discovered"
+        );
+        assert!(
+            s.is_unit_visible(PlayerId(0), enemy),
+            "enemy should be visible while the scout is nearby"
+        );
+
+        // Move the scout far away — the tile stays permanently discovered,
+        // but is no longer in anyone's live sight.
+        let far_coord = crate::hex::HexCoord { q: -4, r: 0 };
+        let far_tile = s.tile_index[&far_coord];
+        s.unit_mut(scout).unwrap().tile = far_tile;
+
+        assert!(
+            s.is_tile_visible(PlayerId(0), enemy_tile),
+            "permanent memory: tile stays discovered forever"
+        );
+        assert!(
+            !s.is_unit_visible(PlayerId(0), enemy),
+            "live sight: enemy must hide again once nothing is watching its tile"
+        );
+    }
+
+    #[test]
+    fn city_and_route_currently_observed_toggles_with_live_sight() {
+        // Mirrors `is_unit_visible_hides_after_revealer_moves_away` for the
+        // cities/routes "live vs. memory marker" tier: `is_city_visible`/
+        // `is_route_visible` (permanent) must stay true forever once ever
+        // seen, while `is_city_currently_observed`/`is_route_currently_observed`
+        // (live) must toggle off once nothing is watching them.
+        let mut s = make_game();
+        let scout = UnitId(0);
+        let enemy_coord = crate::hex::HexCoord { q: 1, r: 0 };
+        let enemy_tile = s.tile_index[&enemy_coord];
+        let city_id = CityId(0);
+        s.cities.push(crate::model::City {
+            id: city_id,
+            owner: PlayerId(1),
+            tile: enemy_tile,
+            population: 1,
+            specialization: None,
+            buildings: vec![],
+            stockpiles: Stockpiles::default(),
+            route_slots: 2,
+            growth_timer: 0,
+            queue: VecDeque::new(),
+        });
+        let route_id = RouteId(0);
+        s.routes.push(crate::model::CaravanRoute {
+            id: route_id,
+            owner: PlayerId(1),
+            endpoints: (city_id, city_id),
+            path: vec![enemy_tile],
+            status: crate::RouteStatus::Active,
+            length: 1,
+            upkeep: 0,
+            consecutive_threatened: 0,
+        });
+
+        s.reveal_from_unit(scout);
+        assert!(s.is_city_visible(PlayerId(0), city_id));
+        assert!(s.is_city_currently_observed(PlayerId(0), city_id));
+        assert!(s.is_route_visible(PlayerId(0), route_id));
+        assert!(s.is_route_currently_observed(PlayerId(0), route_id));
+
+        let far_coord = crate::hex::HexCoord { q: -4, r: 0 };
+        let far_tile = s.tile_index[&far_coord];
+        s.unit_mut(scout).unwrap().tile = far_tile;
+
+        // Permanent memory markers stay visible...
+        assert!(s.is_city_visible(PlayerId(0), city_id));
+        assert!(s.is_route_visible(PlayerId(0), route_id));
+        // ...but their live/dynamic-state tier now correctly reports stale.
+        assert!(!s.is_city_currently_observed(PlayerId(0), city_id));
+        assert!(!s.is_route_currently_observed(PlayerId(0), route_id));
+    }
+
+    #[test]
     fn city_sight_base() {
         let mut s = make_game();
         // No cities yet, so just test the function doesn't panic with a valid city.

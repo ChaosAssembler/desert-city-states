@@ -493,6 +493,122 @@ mod tests {
     }
 
     #[test]
+    fn assess_enemy_no_longer_visible_after_revealer_moves_away() {
+        // Regression test: `visible_enemy_units` must reflect the AI's live
+        // sight, not permanent `discovered` memory — an enemy that was once
+        // seen must vanish again once nothing is currently watching its
+        // tile, even though that tile stays discovered forever.
+        let mut s = make_game();
+        let pid_enemy = s.alloc_player_id();
+        s.players.push(crate::Player {
+            id: pid_enemy,
+            kind: PlayerKind::Human,
+            color: crate::PlayerColor::Crimson,
+            resources: Stockpiles::default(),
+            discovered: FxHashSet::default(),
+            defeated: false,
+        });
+
+        // Within the scout's sight (3) but outside the city's own sight (2)
+        // at the origin, so moving the scout away is what un-observes it.
+        let enemy_coord = crate::hex::HexCoord { q: 3, r: 0 };
+        let enemy_tile = s.tile_index[&enemy_coord];
+        let enemy = s.alloc_unit_id();
+        s.units.push(Unit {
+            id: enemy,
+            owner: pid_enemy,
+            kind: UnitKind::Scout,
+            tile: enemy_tile,
+            hp: 3,
+            moves_left: 3,
+            ability: UnitAbility::None,
+        });
+
+        let scout = test_harness::find_unit(&s, PlayerId(0), UnitKind::Scout);
+        s.reveal_from_unit(scout);
+        assert!(
+            s.assess(PlayerId(0)).visible_enemy_units.contains(&enemy),
+            "enemy should be visible while the scout is nearby"
+        );
+
+        // Move the AI's scout far away — the tile stays discovered, but the
+        // AI must no longer treat the enemy as currently visible.
+        let far_coord = crate::hex::HexCoord {
+            q: -(s.scenario.map_radius as i32),
+            r: s.scenario.map_radius as i32,
+        };
+        let far_tile = s.tile_index[&far_coord];
+        s.unit_mut(scout).unwrap().tile = far_tile;
+
+        assert!(
+            s.is_tile_visible(PlayerId(0), enemy_tile),
+            "permanent memory: tile stays discovered"
+        );
+        assert!(
+            !s.assess(PlayerId(0)).visible_enemy_units.contains(&enemy),
+            "AI must not still see the enemy once nothing is watching its tile"
+        );
+    }
+
+    #[test]
+    fn candidates_expand_ignores_hidden_enemy_city() {
+        // Regression test for a small pre-existing purity leak: the "must
+        // not already have a city" check used to look for ANY city on a
+        // candidate oasis tile, including a fogged enemy one the AI has no
+        // business seeing (ADR-0004).
+        let cfg = ScenarioConfig::mvp_preset();
+        let mut s = GameState::new(cfg, 1);
+        let radius = s.scenario.map_radius as u32;
+        test_harness::allocate_hex_grid(&mut s, radius);
+
+        let scout_coord = HexCoord { q: 0, r: 0 };
+        let oasis_coord = HexCoord { q: 1, r: 0 }; // neighbor of scout_coord
+        test_harness::mark_terrain(&mut s, oasis_coord, TerrainType::Oasis);
+
+        let pid = test_harness::create_player(
+            &mut s,
+            PlayerKind::Ai {
+                personality: AiPersonality::Expansionist,
+                difficulty: Difficulty::Normal,
+            },
+            Stockpiles {
+                water: 10,
+                wealth: 50,
+                influence: 20,
+            },
+        );
+        let scout_tile = s.tile_index[&scout_coord];
+        test_harness::create_unit_with_hp(&mut s, pid, UnitKind::Scout, scout_tile, 3);
+
+        // An enemy city on the oasis neighbor, never discovered by `pid`.
+        let pid_enemy = s.alloc_player_id();
+        s.players.push(crate::Player {
+            id: pid_enemy,
+            kind: PlayerKind::Human,
+            color: crate::PlayerColor::Crimson,
+            resources: Stockpiles::default(),
+            discovered: FxHashSet::default(),
+            defeated: false,
+        });
+        let oasis_tile = s.tile_index[&oasis_coord];
+        let enemy_city_id = test_harness::create_city(&mut s, pid_enemy, oasis_coord, 1);
+        assert!(
+            !s.is_city_visible(pid, enemy_city_id),
+            "sanity: enemy city must be fogged"
+        );
+
+        let sit = s.assess(pid);
+        let candidates = s.candidates_expand(pid, &sit);
+        assert!(
+            candidates.iter().any(|c| matches!(
+                c.cmd,
+                Command::FoundCity { tile, .. } if tile == oasis_tile
+            )),
+            "AI should still consider founding on an oasis occupied only by a city it can't see"
+        );
+    }
+
+    #[test]
     fn assess_enemy_entities_only_visible() {
         let mut s = make_game();
         // Add an enemy player.
