@@ -618,7 +618,11 @@ mod tests {
         assert!(json.contains(r#""player_id":1"#));
         assert!(json.contains(r#""player_name":"Alice""#));
         let back: Request = serde_json::from_str(&json).unwrap();
-        if let Request::ClaimPlayer { player_id, player_name } = back {
+        if let Request::ClaimPlayer {
+            player_id,
+            player_name,
+        } = back
+        {
             assert_eq!(player_id, 1);
             assert_eq!(player_name.as_deref(), Some("Alice"));
         } else {
@@ -671,7 +675,8 @@ mod tests {
 
     #[test]
     fn move_unit_with_hex_coord() {
-        let json = r#"{"type":"act","commands":[{"MoveUnit":{"unit":1,"to":{"q":2,"letter_r":-1}}}]}"#;
+        let json =
+            r#"{"type":"act","commands":[{"MoveUnit":{"unit":1,"to":{"q":2,"letter_r":-1}}}]}"#;
         let req: Request = serde_json::from_str(json).unwrap();
         if let Request::Act { commands, .. } = req {
             if let CommandInput::MoveUnit { to, .. } = &commands[0] {
@@ -774,10 +779,19 @@ mod tests {
         assert!(json.contains(r#""hint":""#));
         assert!(json.contains(r#""request_type":"act""#));
         let back: Response = serde_json::from_str(&json).unwrap();
-        if let Response::Error { code, message, hint, request_type } = back {
+        if let Response::Error {
+            code,
+            message,
+            hint,
+            request_type,
+        } = back
+        {
             assert_eq!(code, "invalid_command");
             assert_eq!(message, "Unit 99 does not exist");
-            assert_eq!(hint.as_deref(), Some("Use `observe` to list valid unit IDs"));
+            assert_eq!(
+                hint.as_deref(),
+                Some("Use `observe` to list valid unit IDs")
+            );
             assert_eq!(request_type, "act");
         } else {
             panic!("expected Error");
@@ -788,8 +802,14 @@ mod tests {
     fn game_created_response() {
         let resp = Response::game_created(
             vec![
-                PlayerInfo { player_id: 0, label: "Player 1".into() },
-                PlayerInfo { player_id: 1, label: "Player 2".into() },
+                PlayerInfo {
+                    player_id: 0,
+                    label: "Player 1".into(),
+                },
+                PlayerInfo {
+                    player_id: 1,
+                    label: "Player 2".into(),
+                },
             ],
             1,
             4,
@@ -865,10 +885,7 @@ mod tests {
 
     #[test]
     fn connect_route_with_optional_from() {
-        let cmd = CommandInput::ConnectRoute {
-            from: None,
-            to: 5,
-        };
+        let cmd = CommandInput::ConnectRoute { from: None, to: 5 };
         let json = serde_json::to_string(&cmd).unwrap();
         assert!(!json.contains("from"));
         let back: CommandInput = serde_json::from_str(&json).unwrap();

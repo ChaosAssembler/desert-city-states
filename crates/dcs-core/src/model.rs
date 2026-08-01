@@ -3509,7 +3509,11 @@ impl GameState {
 
         // Collect the player's units and cities once for reuse.
         let player_units: Vec<_> = self.units.iter().filter(|u| u.owner == player_id).collect();
-        let player_cities: Vec<_> = self.cities.iter().filter(|c| c.owner == player_id).collect();
+        let player_cities: Vec<_> = self
+            .cities
+            .iter()
+            .filter(|c| c.owner == player_id)
+            .collect();
 
         // end_turn: always available when it's the player's turn.
         if is_my_turn {
@@ -3550,12 +3554,17 @@ impl GameState {
             }
 
             // patrol: available if the player has CaravanGuard units.
-            if player_units.iter().any(|u| u.kind == UnitKind::CaravanGuard) {
+            if player_units
+                .iter()
+                .any(|u| u.kind == UnitKind::CaravanGuard)
+            {
                 actions.push("patrol".into());
             }
 
             // garrison: available if the player has CaravanGuard units and cities.
-            if player_units.iter().any(|u| u.kind == UnitKind::CaravanGuard)
+            if player_units
+                .iter()
+                .any(|u| u.kind == UnitKind::CaravanGuard)
                 && !player_cities.is_empty()
             {
                 actions.push("garrison".into());
