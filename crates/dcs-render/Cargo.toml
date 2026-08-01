@@ -12,7 +12,10 @@ dcs-protocol = { path = "../dcs-protocol" }
 # known, unfixed regression (not-fl3/macroquad#1055): a bare
 # `register_plugin = ...` assignment in the quad_net plugin section throws
 # under "use strict" on every page load. 0.4.14 predates the regressing
-# commit (fbc3f90). Bump this once #1055 is fixed upstream — re-verify with
-# `strings web/vendor/mq_js_bundle.js | grep register_plugin` before trusting
-# a newer version's bundle again (see web/build-wasm.sh, .claude/skills/web-deployment).
+# commit (fbc3f90). web/index.html loads the JS runtime from the official
+# CDN with a Subresource Integrity hash pinned to the 0.4.14-era bytes —
+# keep this Cargo pin in lockstep with that hash (both identify the same
+# known-good release) rather than letting the Rust and JS sides drift
+# apart. Bump both together once #1055 is fixed upstream — see
+# .claude/skills/web-deployment for the re-verification steps.
 macroquad = "=0.4.14"

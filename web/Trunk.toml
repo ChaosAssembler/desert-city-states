@@ -1,13 +1,14 @@
 # Trunk config for the macroquad wasm build.
 #
 # macroquad does NOT use wasm-bindgen — it ships its own JS runtime
-# (miniquad's js/gl.js) that loads a plain wasm32-unknown-unknown binary
+# (mq_js_bundle.js) that loads a plain wasm32-unknown-unknown binary
 # directly. Trunk's `rel="rust"` asset pipeline always runs wasm-bindgen
 # with no way to disable it, so it is not used here. Trunk is used only as
 # a dev server / file watcher / static asset pipeline: the actual compile
-# (and vendoring gl.js from the pinned miniquad version — see
-# web/build-wasm.sh) happens in the pre_build hook below, and index.html
-# brings the results into dist/ via `rel="copy-file"`.
+# happens in the pre_build hook below, and index.html brings the result
+# into dist/ via `rel="copy-file"`. mq_js_bundle.js is loaded directly from
+# its CDN with a Subresource Integrity hash (see index.html) rather than
+# vendored — nothing to build or watch for it.
 #
 # This file lives in web/ — a plain directory with no Cargo.toml of its own —
 # rather than the workspace root or a crate directory, to dodge two Trunk 0.21
@@ -23,12 +24,20 @@ target = "index.html"
 dist = "../dist"
 
 [watch]
-# Without this, Trunk's watcher sees the pre_build hook's own output land in
-# target/ and dist/ (and, since build-wasm.sh writes web/vendor/gl.js *inside*
-# this directory, "vendor" too) and rebuild-loops forever.
-ignore = ["../target", "../dist", "../docs", "../.git", "vendor"]
+# Without this, Trunk's watcher sees the pre_build hook's own `cargo build`
+# output land in target/ and rebuild-loops forever.
+ignore = ["../target", "../dist", "../docs", "../.git"]
 
 [[hooks]]
 stage = "pre_build"
-command = "sh"
-command_arguments = ["build-wasm.sh"]
+command = "cargo"
+command_arguments = [
+  "build",
+  "--release",
+  "--target",
+  "wasm32-unknown-unknown",
+  "--bin",
+  "dcs-web",
+  "-p",
+  "dcs-app",
+]

@@ -24,8 +24,20 @@
       rel="copy-file"
       href="../target/wasm32-unknown-unknown/release/dcs-web.wasm"
     />
-    <link data-trunk rel="copy-file" href="vendor/mq_js_bundle.js" />
-    <script src="mq_js_bundle.js"></script>
+    <!--
+      Loaded directly from the CDN the official macroquad docs point at,
+      with Subresource Integrity pinning it to the exact known-good bytes
+      (see .claude/skills/web-deployment for why: 0.4.15/0.4.16's bundled
+      copy has an unfixed upstream bug, not-fl3/macroquad#1055). The
+      browser refuses to execute the script if the fetched bytes don't
+      match the hash, so this can't silently regress if the CDN content
+      ever changes — bump the hash deliberately (and re-verify) instead.
+    -->
+    <script
+      src="https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js"
+      integrity="sha384-aUkGEq3KNnv2npTG1Sji/0CeEkAYlIxqTWlGhY19vw7XOlWw3bhKD2BiZAdCerrf"
+      crossorigin="anonymous"
+    ></script>
     <script>
       load("dcs-web.wasm");
     </script>

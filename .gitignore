@@ -2,7 +2,5 @@
 /target
 /dist
 /.playwright-mcp
-/web/vendor/*
-!/web/vendor/.gitkeep
 mise.local.toml
 .claude/settings.local.json
