@@ -34,27 +34,35 @@ const HEX_SIZE: f32 = 32.0;
 /// Per-scroll-tick zoom change, as a fraction of current zoom.
 const ZOOM_SPEED: f32 = 0.1;
 
-/// How far past `min_zoom` (the whole-map-visible level) scrolling in is
-/// allowed to go, so you can't zoom into a sliver of a single tile.
+/// How far past `min_zoom_scale` (the whole-map-visible level) scrolling in
+/// is allowed to go, so you can't zoom into a sliver of a single tile.
 const MAX_ZOOM_MULTIPLIER: f32 = 6.0;
 
 /// Turns a `&GameState` into pixels. Read-only (ADR-0003, Rule B) — no
 /// `&mut GameState` exists here or anywhere outside `dcs-app`.
 ///
-/// `map_bounds`/`min_zoom`/`drag_anchor` are ephemeral camera-control state
-/// (never part of `GameState`, never serialized — CLAUDE.md's camera/UI
-/// state rule).
+/// `map_bounds`/`zoom_scale`/`min_zoom_scale`/`drag_anchor` are ephemeral
+/// camera-control state (never part of `GameState`, never serialized —
+/// CLAUDE.md's camera/UI state rule).
 pub struct Renderer {
     pub camera: Camera2D,
     pub hex_size: f32,
     map_bounds: Rect,
-    min_zoom: Vec2,
+    /// Current scale, in screen pixels per world unit. The source of truth
+    /// for zoom level — `camera.zoom` (macroquad's per-axis NDC scale) is
+    /// derived from this every frame via `sync_zoom`, rather than being
+    /// mutated directly, so zoom stays aspect-ratio-independent regardless
+    /// of the current window shape.
+    zoom_scale: f32,
+    /// `zoom_scale` at which the whole map exactly fit the window when
+    /// `fit_map` last ran — the zoom-out floor.
+    min_zoom_scale: f32,
     drag_anchor: Option<Vec2>,
 }
 
 impl Renderer {
-    /// Centers and zooms the camera so every tile in `state` is visible.
-    /// Also records the resulting bounds/zoom as the pan/zoom-out limits.
+    /// Centers the camera and records the scale at which every tile in
+    /// `state` is visible, as the pan/zoom-out limits.
     pub fn fit_map(&mut self, state: &GameState) {
         let mut min_x = f32::MAX;
         let mut max_x = f32::MIN;
@@ -74,14 +82,28 @@ impl Renderer {
             (max_x - min_x) + padding * 2.0,
             (max_y - min_y) + padding * 2.0,
         );
-        self.camera = Camera2D::from_display_rect(bounds);
+        // `.min(...)`, not the larger ratio: "contain" the map inside the
+        // window rather than "cover" it, so the shorter axis shows extra
+        // background instead of the map being cropped.
+        let min_zoom_scale = (screen_width() / bounds.w).min(screen_height() / bounds.h);
+        self.zoom_scale = min_zoom_scale;
+        self.min_zoom_scale = min_zoom_scale;
+        self.camera.target = bounds.center();
+        self.camera.rotation = 0.0;
+        self.camera.offset = Vec2::ZERO;
         self.map_bounds = bounds;
-        self.min_zoom = self.camera.zoom;
+        self.sync_zoom();
     }
 
     /// Drag-to-pan (left button) and cursor-anchored scroll-to-zoom.
     /// Call once per frame, before `draw_frame`.
     pub fn handle_input(&mut self) {
+        // Re-derive `camera.zoom` against the *current* screen size first,
+        // so a live window resize is corrected before any pan/zoom math
+        // (which reads `camera.zoom` via screen_to_world/world_to_screen)
+        // runs this frame.
+        self.sync_zoom();
+
         let mouse_screen = Vec2::from(mouse_position());
 
         if is_mouse_button_down(MouseButton::Left) {
@@ -102,8 +124,12 @@ impl Renderer {
             // (trackpad inertial flings can report values in the hundreds),
             // so scaling directly by `wheel_y` would make zoom speed
             // unpredictable and, at the extreme, numerically degenerate.
-            self.camera.zoom *= 1.0 + wheel_y.signum() * ZOOM_SPEED;
-            self.clamp_zoom();
+            self.zoom_scale *= 1.0 + wheel_y.signum() * ZOOM_SPEED;
+            self.zoom_scale = self.zoom_scale.clamp(
+                self.min_zoom_scale,
+                self.min_zoom_scale * MAX_ZOOM_MULTIPLIER,
+            );
+            self.sync_zoom();
             let world_after = self.camera.screen_to_world(mouse_screen);
             self.camera.target += world_before - world_after;
         }
@@ -111,19 +137,16 @@ impl Renderer {
         self.clamp_target();
     }
 
-    /// Keeps zoom magnitude in `[min_zoom, min_zoom * MAX_ZOOM_MULTIPLIER]`
-    /// per axis, preserving `from_display_rect`'s sign convention (`zoom.y`
-    /// is negative).
-    fn clamp_zoom(&mut self) {
-        let clamp_axis = |z: f32, min_mag: f32| {
-            if min_mag >= 0.0 {
-                z.clamp(min_mag, min_mag * MAX_ZOOM_MULTIPLIER)
-            } else {
-                z.clamp(min_mag * MAX_ZOOM_MULTIPLIER, min_mag)
-            }
-        };
-        self.camera.zoom.x = clamp_axis(self.camera.zoom.x, self.min_zoom.x);
-        self.camera.zoom.y = clamp_axis(self.camera.zoom.y, self.min_zoom.y);
+    /// Derives macroquad's per-axis `camera.zoom` from `zoom_scale` against
+    /// the current screen size, keeping both axes uniformly scaled (fixing
+    /// the map-stretches-on-resize bug `Camera2D::from_display_rect` alone
+    /// would otherwise cause, since it scales each axis to independently
+    /// fill whatever the window's current aspect ratio happens to be).
+    fn sync_zoom(&mut self) {
+        self.camera.zoom = vec2(
+            2.0 * self.zoom_scale / screen_width(),
+            -2.0 * self.zoom_scale / screen_height(),
+        );
     }
 
     /// Keeps the camera target inside the map's bounding rect, so panning
@@ -281,7 +304,8 @@ pub fn run(config: RenderConfig) {
                 camera: Camera2D::default(),
                 hex_size: HEX_SIZE,
                 map_bounds: Rect::new(0.0, 0.0, 0.0, 0.0),
-                min_zoom: Vec2::ONE,
+                zoom_scale: 1.0,
+                min_zoom_scale: 1.0,
                 drag_anchor: None,
             };
             renderer.fit_map(&state);
