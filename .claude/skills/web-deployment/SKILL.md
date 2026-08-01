@@ -106,6 +106,24 @@ Integrity (SRI) hash — nothing to vendor, copy, or gitignore for it at all.
      time — acceptable here since the whole point is a browser-driven
      (Playwright) test target, but worth knowing if this ever needs to run
      fully offline.
+     - **Don't try to pin this to a specific commit via
+       `raw.githubusercontent.com/<owner>/<repo>/<sha>/mq_js_bundle.js`
+       instead of the `.github.io` Pages URL, even though it looks like it
+       should work** (same bytes, confirmed via md5; CORS present) — tried
+       this and it doesn't: `raw.githubusercontent.com` serves everything
+       as `Content-Type: text/plain` with `X-Content-Type-Options: nosniff`
+       (deliberately, to stop people using it as a script CDN), so browsers
+       correctly refuse to execute it as a `<script>` regardless of a
+       matching SRI hash — confirmed via the actual Firefox console error
+       (`blocked due to MIME type ("text/plain") mismatch`). The SRI hash
+       against the Pages URL already gets you fail-loud protection against
+       unexpected upstream changes; true commit-level immutability (keeps
+       working forever on chosen bytes even if upstream changes) would
+       need fetching that commit-pinned raw URL once at build time and
+       re-serving it locally with a correct `Content-Type` — i.e. back to
+       vendoring, just decoupled from the `macroquad` crate version this
+       time. Deliberately not done — the added machinery wasn't judged
+       worth it over "fails loud, you re-pin."
    - `<script>load("<bin>.wasm");</script>`.
    - CSS: `body { margin:0; overflow:hidden; }`,
      `canvas { display:block; width:100vw; height:100vh; }`.
