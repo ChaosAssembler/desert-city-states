@@ -200,12 +200,31 @@ impl Renderer {
         }
 
         if is_mouse_button_pressed(MouseButton::Right) {
-            if let Some(unit) = self.selected_unit {
-                let hex_coord = self.screen_to_hex(Vec2::from(mouse_position()));
-                if let Some(tile) = state.tile_at(hex_coord) {
-                    let cmd = Command::MoveUnit { unit, to: tile.id };
-                    if state.validate(&cmd).is_ok() {
-                        commands.push(cmd);
+            if let Some(unit_id) = self.selected_unit {
+                let unit_tile = state.units.iter().find(|u| u.id == unit_id).map(|u| u.tile);
+                if let Some(unit_tile) = unit_tile {
+                    let hex_coord = self.screen_to_hex(Vec2::from(mouse_position()));
+                    if let Some(tile) = state.tile_at(hex_coord) {
+                        // Right-clicking the selected unit's own tile can
+                        // only sensibly mean "found a city here" (moving a
+                        // unit to the tile it's already on is meaningless);
+                        // any other tile means "move there" — a clean,
+                        // non-overlapping split needing no separate arming
+                        // state.
+                        let cmd = if tile.id == unit_tile {
+                            Command::FoundCity {
+                                unit: unit_id,
+                                tile: tile.id,
+                            }
+                        } else {
+                            Command::MoveUnit {
+                                unit: unit_id,
+                                to: tile.id,
+                            }
+                        };
+                        if state.validate(&cmd).is_ok() {
+                            commands.push(cmd);
+                        }
                     }
                 }
             }
