@@ -31,15 +31,30 @@ impl Default for RenderConfig {
 /// World pixels per hex "radius" (center to corner).
 const HEX_SIZE: f32 = 32.0;
 
+/// Per-scroll-tick zoom change, as a fraction of current zoom.
+const ZOOM_SPEED: f32 = 0.1;
+
+/// How far past `min_zoom` (the whole-map-visible level) scrolling in is
+/// allowed to go, so you can't zoom into a sliver of a single tile.
+const MAX_ZOOM_MULTIPLIER: f32 = 6.0;
+
 /// Turns a `&GameState` into pixels. Read-only (ADR-0003, Rule B) — no
 /// `&mut GameState` exists here or anywhere outside `dcs-app`.
+///
+/// `map_bounds`/`min_zoom`/`drag_anchor` are ephemeral camera-control state
+/// (never part of `GameState`, never serialized — CLAUDE.md's camera/UI
+/// state rule).
 pub struct Renderer {
     pub camera: Camera2D,
     pub hex_size: f32,
+    map_bounds: Rect,
+    min_zoom: Vec2,
+    drag_anchor: Option<Vec2>,
 }
 
 impl Renderer {
     /// Centers and zooms the camera so every tile in `state` is visible.
+    /// Also records the resulting bounds/zoom as the pan/zoom-out limits.
     pub fn fit_map(&mut self, state: &GameState) {
         let mut min_x = f32::MAX;
         let mut max_x = f32::MIN;
@@ -53,12 +68,77 @@ impl Renderer {
             max_y = max_y.max(y);
         }
         let padding = self.hex_size * 2.0;
-        self.camera = Camera2D::from_display_rect(Rect::new(
+        let bounds = Rect::new(
             min_x - padding,
             min_y - padding,
             (max_x - min_x) + padding * 2.0,
             (max_y - min_y) + padding * 2.0,
-        ));
+        );
+        self.camera = Camera2D::from_display_rect(bounds);
+        self.map_bounds = bounds;
+        self.min_zoom = self.camera.zoom;
+    }
+
+    /// Drag-to-pan (left button) and cursor-anchored scroll-to-zoom.
+    /// Call once per frame, before `draw_frame`.
+    pub fn handle_input(&mut self) {
+        let mouse_screen = Vec2::from(mouse_position());
+
+        if is_mouse_button_down(MouseButton::Left) {
+            let current_world = self.camera.screen_to_world(mouse_screen);
+            if let Some(anchor) = self.drag_anchor {
+                self.camera.target += anchor - current_world;
+            }
+            self.drag_anchor = Some(self.camera.screen_to_world(mouse_screen));
+        } else {
+            self.drag_anchor = None;
+        }
+
+        let wheel_y = mouse_wheel().1;
+        if wheel_y != 0.0 {
+            let world_before = self.camera.screen_to_world(mouse_screen);
+            // A fixed step per wheel tick, not scaled by the raw delta
+            // magnitude: real devices report wildly different deltaY scales
+            // (trackpad inertial flings can report values in the hundreds),
+            // so scaling directly by `wheel_y` would make zoom speed
+            // unpredictable and, at the extreme, numerically degenerate.
+            self.camera.zoom *= 1.0 + wheel_y.signum() * ZOOM_SPEED;
+            self.clamp_zoom();
+            let world_after = self.camera.screen_to_world(mouse_screen);
+            self.camera.target += world_before - world_after;
+        }
+
+        self.clamp_target();
+    }
+
+    /// Keeps zoom magnitude in `[min_zoom, min_zoom * MAX_ZOOM_MULTIPLIER]`
+    /// per axis, preserving `from_display_rect`'s sign convention (`zoom.y`
+    /// is negative).
+    fn clamp_zoom(&mut self) {
+        let clamp_axis = |z: f32, min_mag: f32| {
+            if min_mag >= 0.0 {
+                z.clamp(min_mag, min_mag * MAX_ZOOM_MULTIPLIER)
+            } else {
+                z.clamp(min_mag * MAX_ZOOM_MULTIPLIER, min_mag)
+            }
+        };
+        self.camera.zoom.x = clamp_axis(self.camera.zoom.x, self.min_zoom.x);
+        self.camera.zoom.y = clamp_axis(self.camera.zoom.y, self.min_zoom.y);
+    }
+
+    /// Keeps the camera target inside the map's bounding rect, so panning
+    /// can't drift the view off into empty background.
+    fn clamp_target(&mut self) {
+        self.camera.target.x = self
+            .camera
+            .target
+            .x
+            .clamp(self.map_bounds.x, self.map_bounds.x + self.map_bounds.w);
+        self.camera.target.y = self
+            .camera
+            .target
+            .y
+            .clamp(self.map_bounds.y, self.map_bounds.y + self.map_bounds.h);
     }
 
     /// One immediate-mode frame: tiles, routes, cities, units (spec draw
@@ -200,11 +280,15 @@ pub fn run(config: RenderConfig) {
             let mut renderer = Renderer {
                 camera: Camera2D::default(),
                 hex_size: HEX_SIZE,
+                map_bounds: Rect::new(0.0, 0.0, 0.0, 0.0),
+                min_zoom: Vec2::ONE,
+                drag_anchor: None,
             };
             renderer.fit_map(&state);
 
             loop {
                 clear_background(config.background_color);
+                renderer.handle_input();
                 renderer.draw_frame(&state);
                 next_frame().await;
             }
