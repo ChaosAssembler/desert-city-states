@@ -51,6 +51,10 @@ const FOG_TILE_COLOR: Color = Color::from_rgba(24, 22, 20, 255);
 /// route status) isn't directly observed this frame (spec §6.3).
 const DIM_FACTOR: f32 = 0.45;
 
+/// How long a rejected command's reason stays visible in the HUD
+/// ([`Renderer::draw_hud`]) after `poll_input` sets `last_rejection`.
+const REJECTION_DISPLAY_SECS: f64 = 2.5;
+
 /// Which city-menu command a selected city is "armed" to issue next
 /// (`KeyCode::T`/`B`/`S`), confirmed by a following number key
 /// (`presentation-rendering-ui.md` §6.4/§6.5 puts these behind a left HUD
@@ -68,9 +72,9 @@ enum CityActionKind {
 /// `&mut GameState` exists here or anywhere outside `dcs-app`.
 ///
 /// `map_bounds`/`zoom_scale`/`min_zoom_scale`/`drag_anchor`/`selected_unit`/
-/// `selected_city`/`armed_city_action`/`left_press_pos`/`just_clicked` are
-/// ephemeral camera- and UI-control state (never part of `GameState`, never
-/// serialized — CLAUDE.md's camera/UI state rule).
+/// `selected_city`/`armed_city_action`/`left_press_pos`/`just_clicked`/
+/// `last_rejection` are ephemeral camera- and UI-control state (never part
+/// of `GameState`, never serialized — CLAUDE.md's camera/UI state rule).
 pub struct Renderer {
     pub camera: Camera2D,
     pub hex_size: f32,
@@ -104,6 +108,12 @@ pub struct Renderer {
     /// Set by `handle_input` for exactly one frame when a left click (not a
     /// drag) just completed, consumed by `poll_input` the same frame.
     just_clicked: Option<Vec2>,
+    /// The most recent `RejectReason` a command failed `validate` with,
+    /// alongside the `get_time()` it was set at — shown as a transient HUD
+    /// line ([`Renderer::draw_hud`]) for [`REJECTION_DISPLAY_SECS`], then
+    /// left stale (cheaper than clearing it — the age check alone is enough
+    /// to stop it being drawn).
+    last_rejection: Option<(String, f64)>,
 }
 
 impl Renderer {
@@ -263,8 +273,11 @@ impl Renderer {
             if let Some(action) = self.armed_city_action {
                 if let Some(n) = pressed_digit_1_to_9() {
                     if let Some(cmd) = city_action_command(city_id, action, n) {
-                        if state.validate(&cmd).is_ok() {
-                            commands.push(cmd);
+                        match state.validate(&cmd) {
+                            Ok(()) => commands.push(cmd),
+                            Err(reason) => {
+                                self.last_rejection = Some((reason.to_string(), get_time()))
+                            }
                         }
                     }
                     self.armed_city_action = None;
@@ -303,8 +316,11 @@ impl Renderer {
                                     to: tile.id,
                                 }
                             };
-                            if state.validate(&cmd).is_ok() {
-                                commands.push(cmd);
+                            match state.validate(&cmd) {
+                                Ok(()) => commands.push(cmd),
+                                Err(reason) => {
+                                    self.last_rejection = Some((reason.to_string(), get_time()))
+                                }
                             }
                         }
                     }
@@ -448,6 +464,12 @@ impl Renderer {
             "Click a unit or city to select".to_string()
         };
         draw_text(&context_line, 10.0, 88.0, 18.0, BLACK);
+
+        if let Some((message, at)) = &self.last_rejection {
+            if get_time() - at < REJECTION_DISPLAY_SECS {
+                draw_text(&format!("Rejected: {message}"), 10.0, 108.0, 18.0, RED);
+            }
+        }
     }
 }
 
@@ -731,6 +753,7 @@ pub fn run(
                 armed_city_action: None,
                 left_press_pos: None,
                 just_clicked: None,
+                last_rejection: None,
             };
             renderer.fit_map(&state);
 
