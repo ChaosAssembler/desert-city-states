@@ -4,7 +4,7 @@
 
 use dcs_core::hex;
 use dcs_core::{
-    BuildingKind, CityId, CitySpecialization, Command, GameState, PlayerColor, PlayerId,
+    BuildingKind, CityId, CitySpecialization, Command, GameEvent, GameState, PlayerColor, PlayerId,
     RouteStatus, TerrainType, TileId, Unit, UnitId, UnitKind,
 };
 use macroquad::prelude::*;
@@ -407,6 +407,33 @@ impl Renderer {
             BLACK,
         );
         draw_text("Space: End Turn", 10.0, 48.0, 18.0, BLACK);
+
+        let resources = state.players[state.current_actor.0 as usize].resources;
+        let (dw, dwealth, dinf) = state
+            .log
+            .iter()
+            .rev()
+            .find_map(|e| match e {
+                GameEvent::Income {
+                    player,
+                    water,
+                    wealth,
+                    influence,
+                } if *player == state.current_actor => Some((*water, *wealth, *influence)),
+                _ => None,
+            })
+            .unwrap_or((0, 0, 0));
+        draw_text(
+            &format!(
+                "Water: {} ({dw:+})  Wealth: {} ({dwealth:+})  Influence: {} ({dinf:+})",
+                resources.water, resources.wealth, resources.influence
+            ),
+            10.0,
+            68.0,
+            18.0,
+            BLACK,
+        );
+
         let context_line = if self.selected_unit.is_some() {
             "Selected unit - right-click to move (own tile: found city)".to_string()
         } else if let Some(action) = self.armed_city_action {
@@ -420,7 +447,7 @@ impl Renderer {
         } else {
             "Click a unit or city to select".to_string()
         };
-        draw_text(&context_line, 10.0, 68.0, 18.0, BLACK);
+        draw_text(&context_line, 10.0, 88.0, 18.0, BLACK);
     }
 }
 

@@ -97,6 +97,13 @@ impl GameState {
         self.phase = crate::TurnPhase::Income;
         let actor = self.current_actor();
         let income_events = self.apply_income(actor);
+        // Unlike resolve_one (which logs its own per-command events) and
+        // advance_turn (which logs its own events), step() itself never
+        // logged its Income summary — the only Income events that ever
+        // reach `self.log`. Log it here, matching every other event
+        // category, so callers reading `state.log` (e.g. a HUD deriving
+        // last-turn deltas) can actually find it.
+        self.log.append(&mut income_events.clone());
         events.extend(income_events);
 
         // If EndTurn was present, this actor is done — advance to the next actor
@@ -862,6 +869,33 @@ mod tests {
             "founding unit should be consumed"
         );
         assert_eq!(s.tiles[tile.0 as usize].owner, Some(PlayerId(0)));
+    }
+
+    #[test]
+    fn step_logs_its_income_event() {
+        // Regression test: step()'s own Income summary (computed after the
+        // per-command resolve loop) used to never reach `self.log` — unlike
+        // resolve_one's per-command events and advance_turn's events, which
+        // both log themselves, step() itself didn't log its Income event,
+        // so any caller reading `state.log` (e.g. a HUD deriving last-turn
+        // deltas) could never find it, even though it's always present in
+        // step()'s *returned* event vec.
+        let mut s = make_game();
+        let scout = player_scout(&s, PlayerId(0));
+        let tile = scout_tile(&s, scout);
+        let events = s.step(&[Command::FoundCity { unit: scout, tile }]);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, GameEvent::Income { player, .. } if *player == PlayerId(0))),
+            "sanity: step() returns an Income event"
+        );
+        assert!(
+            s.log
+                .iter()
+                .any(|e| matches!(e, GameEvent::Income { player, .. } if *player == PlayerId(0))),
+            "step()'s Income event must also be logged to state.log, not just returned"
+        );
     }
 
     #[test]
