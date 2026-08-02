@@ -390,6 +390,38 @@ impl Renderer {
         }
         set_default_camera();
     }
+
+    /// Screen-space HUD text: turn/player, then keybind hints for whatever's
+    /// currently possible — a placeholder for the left/bottom HUD panels the
+    /// spec eventually wants (§6.4), so the keybind-driven interactions
+    /// added so far (`Space`/`T`/`B`/`S`/`1`-`9`) are at least discoverable
+    /// without a mouse-clickable UI yet. Called from [`run`], not
+    /// `draw_frame` — no camera handling needed, `draw_frame` already left
+    /// the default (screen-space) camera active.
+    pub fn draw_hud(&self, state: &GameState) {
+        draw_text(
+            &format!("Turn {} - Player {}", state.turn, state.current_actor.0),
+            10.0,
+            24.0,
+            24.0,
+            BLACK,
+        );
+        draw_text("Space: End Turn", 10.0, 48.0, 18.0, BLACK);
+        let context_line = if self.selected_unit.is_some() {
+            "Selected unit - right-click to move (own tile: found city)".to_string()
+        } else if let Some(action) = self.armed_city_action {
+            match action {
+                CityActionKind::Train => kind_hint_line("Train", &TRAIN_KINDS),
+                CityActionKind::Build => kind_hint_line("Build", &BUILD_KINDS),
+                CityActionKind::Specialize => kind_hint_line("Specialize", &SPECIALIZE_KINDS),
+            }
+        } else if self.selected_city.is_some() {
+            "Selected city - T train  B build  S specialize".to_string()
+        } else {
+            "Click a unit or city to select".to_string()
+        };
+        draw_text(&context_line, 10.0, 68.0, 18.0, BLACK);
+    }
 }
 
 fn terrain_color(terrain: TerrainType) -> Color {
@@ -432,43 +464,55 @@ fn pressed_digit_1_to_9() -> Option<u8> {
         .map(|(_, n)| *n)
 }
 
-/// Builds the `Command` for `action`'s `n`th variant (1-indexed, matching
-/// each enum's declaration order in `dcs-protocol`), or `None` if `n` is out
+/// The kinds each city action can produce, in the exact order `1`-`9` picks
+/// from (1-indexed) — the single source of truth shared by
+/// [`city_action_command`] and the HUD hint text ([`Renderer::draw_hud`]),
+/// so the two can never drift apart.
+const TRAIN_KINDS: [UnitKind; 3] = [UnitKind::Scout, UnitKind::CaravanGuard, UnitKind::Raider];
+const BUILD_KINDS: [BuildingKind; 6] = [
+    BuildingKind::Well,
+    BuildingKind::Market,
+    BuildingKind::Granary,
+    BuildingKind::Watchtower,
+    BuildingKind::Caravanserai,
+    BuildingKind::Temple,
+];
+const SPECIALIZE_KINDS: [CitySpecialization; 4] = [
+    CitySpecialization::TradeHub,
+    CitySpecialization::WellFort,
+    CitySpecialization::Fortress,
+    CitySpecialization::ScholarOutpost,
+];
+
+/// Builds the `Command` for `action`'s `n`th variant (1-indexed into
+/// `TRAIN_KINDS`/`BUILD_KINDS`/`SPECIALIZE_KINDS`), or `None` if `n` is out
 /// of range for that action.
 fn city_action_command(city: CityId, action: CityActionKind, n: u8) -> Option<Command> {
+    let idx = (n as usize).checked_sub(1)?;
     match action {
-        CityActionKind::Train => {
-            let kind = match n {
-                1 => UnitKind::Scout,
-                2 => UnitKind::CaravanGuard,
-                3 => UnitKind::Raider,
-                _ => return None,
-            };
-            Some(Command::TrainUnit { city, kind })
-        }
-        CityActionKind::Build => {
-            let building = match n {
-                1 => BuildingKind::Well,
-                2 => BuildingKind::Market,
-                3 => BuildingKind::Granary,
-                4 => BuildingKind::Watchtower,
-                5 => BuildingKind::Caravanserai,
-                6 => BuildingKind::Temple,
-                _ => return None,
-            };
-            Some(Command::Build { city, building })
-        }
-        CityActionKind::Specialize => {
-            let spec = match n {
-                1 => CitySpecialization::TradeHub,
-                2 => CitySpecialization::WellFort,
-                3 => CitySpecialization::Fortress,
-                4 => CitySpecialization::ScholarOutpost,
-                _ => return None,
-            };
-            Some(Command::Specialize { city, spec })
-        }
+        CityActionKind::Train => TRAIN_KINDS
+            .get(idx)
+            .map(|&kind| Command::TrainUnit { city, kind }),
+        CityActionKind::Build => BUILD_KINDS
+            .get(idx)
+            .map(|&building| Command::Build { city, building }),
+        CityActionKind::Specialize => SPECIALIZE_KINDS
+            .get(idx)
+            .map(|&spec| Command::Specialize { city, spec }),
     }
+}
+
+/// Formats a numbered hint line for one of the `*_KINDS` arrays, e.g.
+/// `"Train - 1 Scout  2 CaravanGuard  3 Raider"`. Plain ASCII hyphen, not an
+/// em dash — macroquad's default font has no glyph for it (renders as a
+/// missing-glyph box), confirmed live in the wasm build.
+fn kind_hint_line(label: &str, kinds: &[impl std::fmt::Display]) -> String {
+    let parts: Vec<String> = kinds
+        .iter()
+        .enumerate()
+        .map(|(i, k)| format!("{} {k}", i + 1))
+        .collect();
+    format!("{label} - {}", parts.join("  "))
 }
 
 fn tile_pixel(state: &GameState, tile: TileId, hex_size: f32) -> (f32, f32) {
@@ -668,13 +712,7 @@ pub fn run(
                 renderer.handle_input();
                 on_frame(&mut state, &mut renderer);
                 renderer.draw_frame(&state);
-                draw_text(
-                    &format!("Turn {} - Player {}", state.turn, state.current_actor.0),
-                    10.0,
-                    24.0,
-                    24.0,
-                    BLACK,
-                );
+                renderer.draw_hud(&state);
                 next_frame().await;
             }
         },
