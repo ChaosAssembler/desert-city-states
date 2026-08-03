@@ -72,9 +72,10 @@ enum CityActionKind {
 /// `&mut GameState` exists here or anywhere outside `dcs-app`.
 ///
 /// `map_bounds`/`zoom_scale`/`min_zoom_scale`/`drag_anchor`/`selected_unit`/
-/// `selected_city`/`armed_city_action`/`left_press_pos`/`just_clicked`/
-/// `last_rejection` are ephemeral camera- and UI-control state (never part
-/// of `GameState`, never serialized — CLAUDE.md's camera/UI state rule).
+/// `selected_city`/`armed_city_action`/`route_plan_from`/`left_press_pos`/
+/// `just_clicked`/`last_rejection` are ephemeral camera- and UI-control state
+/// (never part of `GameState`, never serialized — CLAUDE.md's camera/UI
+/// state rule).
 pub struct Renderer {
     pub camera: Camera2D,
     pub hex_size: f32,
@@ -101,6 +102,13 @@ pub struct Renderer {
     /// see [`CityActionKind`]. Cleared whenever the selection changes or a
     /// number key is consumed.
     armed_city_action: Option<CityActionKind>,
+    /// The city armed to be the source (`from`) of a `ConnectRoute` once a
+    /// target city is right-clicked — the route-planning analogue of
+    /// `armed_city_action`, but confirmed via a map click (a second city)
+    /// rather than a digit key, since there's no small fixed enum of
+    /// choices to index into. Cleared whenever the selection changes (any
+    /// new left click) or a right-click confirm is attempted.
+    route_plan_from: Option<CityId>,
     /// Screen position of an in-progress left-button press, for click-vs-drag
     /// disambiguation against the existing pan-drag behavior in
     /// `handle_input`. Internal bookkeeping only.
@@ -219,13 +227,15 @@ impl Renderer {
     ///
     /// Left-click selects a friendly unit at the clicked hex, else a friendly
     /// city there, else deselects both; right-click issues a validated
-    /// `MoveUnit`/`FoundCity` for a selected unit. With a city selected,
-    /// `T`/`B`/`S` arms Train/Build/Specialize and a following `1`-`9` key
-    /// confirms the Nth kind (declaration order) — see [`CityActionKind`];
-    /// this is a placeholder trigger for what the spec puts behind a left
-    /// HUD panel that doesn't exist yet (§6.4). No route-planning/`Patrol`/
-    /// `RaidRoute`/`RaidCity` yet — future slices extend this same method,
-    /// not a new one.
+    /// `MoveUnit`/`FoundCity` for a selected unit, or confirms a `ConnectRoute`
+    /// if route-planning is armed. With a city selected, `T`/`B`/`S` arms
+    /// Train/Build/Specialize and a following `1`-`9` key confirms the Nth
+    /// kind (declaration order) — see [`CityActionKind`]; `R` arms route-
+    /// planning from that city instead, confirmed by right-clicking a second
+    /// city (spec §6.5's "first city click ... second city click" pattern,
+    /// adapted to this crate's keybind-driven placeholder since there's no
+    /// left HUD panel yet, §6.4). No `Patrol`/`RaidRoute`/`RaidCity`/
+    /// `Garrison` yet — future slices extend this same method, not a new one.
     pub fn poll_input(&mut self, state: &GameState) -> Vec<Command> {
         if let Some(pos) = self.just_clicked.take() {
             let hex_coord = self.screen_to_hex(pos);
@@ -253,6 +263,7 @@ impl Renderer {
                 })
             };
             self.armed_city_action = None;
+            self.route_plan_from = None;
         }
 
         let mut commands = Vec::new();
@@ -264,10 +275,16 @@ impl Renderer {
         if let Some(city_id) = self.selected_city {
             if is_key_pressed(KeyCode::T) {
                 self.armed_city_action = Some(CityActionKind::Train);
+                self.route_plan_from = None;
             } else if is_key_pressed(KeyCode::B) {
                 self.armed_city_action = Some(CityActionKind::Build);
+                self.route_plan_from = None;
             } else if is_key_pressed(KeyCode::S) {
                 self.armed_city_action = Some(CityActionKind::Specialize);
+                self.route_plan_from = None;
+            } else if is_key_pressed(KeyCode::R) {
+                self.route_plan_from = Some(city_id);
+                self.armed_city_action = None;
             }
 
             if let Some(action) = self.armed_city_action {
@@ -315,6 +332,29 @@ impl Renderer {
                                     unit: unit_id,
                                     to: tile.id,
                                 }
+                            };
+                            match state.validate(&cmd) {
+                                Ok(()) => commands.push(cmd),
+                                Err(reason) => {
+                                    self.last_rejection = Some((reason.to_string(), get_time()))
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if let Some(from_city) = self.route_plan_from.take() {
+                let hex_coord = self.screen_to_hex(Vec2::from(mouse_position()));
+                if let Some(tile) = state.tile_at(hex_coord) {
+                    if state.is_tile_visible(state.current_actor, tile.id) {
+                        if let Some(to_city) = state
+                            .cities
+                            .iter()
+                            .find(|c| c.tile == tile.id)
+                            .map(|c| c.id)
+                        {
+                            let cmd = Command::ConnectRoute {
+                                from: from_city,
+                                to: to_city,
                             };
                             match state.validate(&cmd) {
                                 Ok(()) => commands.push(cmd),
@@ -458,8 +498,24 @@ impl Renderer {
                 CityActionKind::Build => kind_hint_line("Build", &BUILD_KINDS),
                 CityActionKind::Specialize => kind_hint_line("Specialize", &SPECIALIZE_KINDS),
             }
+        } else if let Some(from_city) = self.route_plan_from {
+            let hovered = self.screen_to_hex(Vec2::from(mouse_position()));
+            let preview = state
+                .tile_at(hovered)
+                .and_then(|t| state.cities.iter().find(|c| c.tile == t.id))
+                .filter(|c| c.id != from_city)
+                .map(|c| state.preview_cost(from_city, c.id));
+            match preview {
+                Some((cost, path)) if !path.is_empty() => {
+                    format!("Route planning - right-click a city to connect (Cost: {cost})")
+                }
+                Some(_) => {
+                    "Route planning - right-click a city to connect (unreachable)".to_string()
+                }
+                None => "Route planning - right-click a city to connect".to_string(),
+            }
         } else if self.selected_city.is_some() {
-            "Selected city - T train  B build  S specialize".to_string()
+            "Selected city - T train  B build  S specialize  R connect route".to_string()
         } else {
             "Click a unit or city to select".to_string()
         };
@@ -799,6 +855,7 @@ pub fn run(
                 selected_unit: None,
                 selected_city: None,
                 armed_city_action: None,
+                route_plan_from: None,
                 left_press_pos: None,
                 just_clicked: None,
                 last_rejection: None,
