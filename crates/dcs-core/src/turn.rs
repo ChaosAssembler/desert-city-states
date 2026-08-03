@@ -500,15 +500,25 @@ impl GameState {
             }
         };
 
-        // Decrement moves: one point per step, clamped to the unit's remaining pool.
-        let steps = path.len().min(u8::MAX as usize) as u8;
+        // Stop-short: if the path is longer than the unit can afford this turn,
+        // it advances only as far as `moves_left` allows (spec §6.1 steps 3/7)
+        // rather than teleporting to the originally requested tile.
+        let moves_left = self.unit(unit).moves_left as usize;
+        let steps_taken = path.len().min(moves_left);
+        let stop_coord = if steps_taken == 0 {
+            from_coord
+        } else {
+            path[steps_taken - 1]
+        };
+        let stop_tile = self.tile_index[&stop_coord];
+
+        let consumed = (steps_taken as u8).max(1);
         {
             let u = self
                 .unit_mut(unit)
                 .expect("unit existence already validated");
-            let consumed = steps.min(u.moves_left).max(1);
             u.moves_left = u.moves_left.saturating_sub(consumed);
-            u.tile = to;
+            u.tile = stop_tile;
         }
 
         // Reveal fog from the unit's stop position.
@@ -517,14 +527,14 @@ impl GameState {
         let mut events = vec![GameEvent::UnitMoved {
             unit,
             from: from_tile,
-            to,
+            to: stop_tile,
         }];
 
-        // Check for enemy unit at destination — trigger combat (spec §6.1).
+        // Check for enemy unit at the stop tile — trigger combat (spec §6.1).
         if let Some(enemy_id) = self
             .units
             .iter()
-            .find(|u| u.tile == to && u.owner != actor)
+            .find(|u| u.tile == stop_tile && u.owner != actor)
             .map(|u| u.id)
         {
             let combat_events = self.resolve_combat(unit, enemy_id, from_tile);
@@ -838,6 +848,59 @@ mod tests {
             "expected UnitMoved event"
         );
         assert_eq!(scout_tile(&s, scout), to, "unit should be on destination");
+    }
+
+    #[test]
+    fn move_unit_stops_short_when_destination_exceeds_moves_left() {
+        // Regression test: a MoveUnit command used to teleport the unit to the
+        // exact requested tile regardless of distance, only clamping how many
+        // move points were consumed. Per spec §6.1 steps 3/7, a unit must stop
+        // partway along the path once `moves_left` is exhausted.
+        let mut s = make_game();
+        let scout = player_scout(&s, PlayerId(0));
+        let from = scout_tile(&s, scout);
+        assert_eq!(s.tiles[from.0 as usize].coord, HexCoord { q: 0, r: 0 });
+
+        let radius = s.scenario.map_radius as u32;
+        let far_coord = HexCoord { q: 4, r: 0 };
+        assert!(
+            far_coord.in_map(radius),
+            "test assumes a radius-4 map (mvp_preset)"
+        );
+        let far_tile = s.tile_index[&far_coord];
+
+        // The scout (moves_left == 3) can afford only 3 of the 4 steps on the
+        // unique shortest (straight-line) path, so it should stop at (3, 0).
+        let stop_coord = HexCoord { q: 3, r: 0 };
+        let stop_tile = s.tile_index[&stop_coord];
+
+        let moves_before = s.units.iter().find(|u| u.id == scout).unwrap().moves_left;
+        assert_eq!(moves_before, 3, "sanity: scout starts with 3 moves");
+
+        let events = s.step(&[Command::MoveUnit {
+            unit: scout,
+            to: far_tile,
+        }]);
+
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                GameEvent::UnitMoved { unit, to: t, .. } if *unit == scout && *t == stop_tile
+            )),
+            "expected the scout to stop at the 3-hex mark, not the requested tile"
+        );
+        assert_eq!(
+            scout_tile(&s, scout),
+            stop_tile,
+            "scout should have stopped short, not teleported to the requested destination"
+        );
+        assert_ne!(
+            scout_tile(&s, scout),
+            far_tile,
+            "scout must not reach a tile beyond its movement range in one command"
+        );
+        let moves_after = s.units.iter().find(|u| u.id == scout).unwrap().moves_left;
+        assert_eq!(moves_after, 0, "scout should have exhausted its moves");
     }
 
     #[test]
