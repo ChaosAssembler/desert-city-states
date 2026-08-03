@@ -473,6 +473,54 @@ impl Renderer {
     }
 }
 
+/// Full-screen "Player X Wins" overlay, drawn on top of everything else once
+/// a `GameEvent::Victory` has been logged. `state.log` only ever gains one
+/// such event per game (the frozen final turn keeps re-appending no further
+/// events once `dcs-app` stops stepping), so a plain forward scan is enough.
+fn draw_victory_overlay(state: &GameState) {
+    let Some((kind, winner)) = state.log.iter().find_map(|e| match e {
+        GameEvent::Victory { kind, winner } => Some((*kind, *winner)),
+        _ => None,
+    }) else {
+        return;
+    };
+
+    draw_rectangle(
+        0.0,
+        0.0,
+        screen_width(),
+        screen_height(),
+        Color::new(0.0, 0.0, 0.0, 0.6),
+    );
+
+    let color_name = state
+        .players
+        .iter()
+        .find(|p| p.id == winner)
+        .map(|p| p.color.to_string())
+        .unwrap_or_else(|| format!("Player {}", winner.0));
+
+    let title = format!("{color_name} Wins!");
+    let subtitle = format!("Victory: {kind} (Turn {})", state.turn);
+
+    let title_dims = measure_text(&title, None, 48, 1.0);
+    draw_text(
+        &title,
+        (screen_width() - title_dims.width) / 2.0,
+        screen_height() / 2.0 - 10.0,
+        48.0,
+        WHITE,
+    );
+    let subtitle_dims = measure_text(&subtitle, None, 24, 1.0);
+    draw_text(
+        &subtitle,
+        (screen_width() - subtitle_dims.width) / 2.0,
+        screen_height() / 2.0 + 30.0,
+        24.0,
+        WHITE,
+    );
+}
+
 fn terrain_color(terrain: TerrainType) -> Color {
     match terrain {
         TerrainType::Oasis => Color::from_rgba(64, 156, 148, 255),
@@ -763,6 +811,7 @@ pub fn run(
                 on_frame(&mut state, &mut renderer);
                 renderer.draw_frame(&state);
                 renderer.draw_hud(&state);
+                draw_victory_overlay(&state);
                 next_frame().await;
             }
         },
