@@ -28,7 +28,7 @@ use crate::model::{
 };
 use crate::scenario::{AiPersonality, Difficulty, ScenarioConfig};
 use crate::traits::UnitKindExt;
-use crate::{GameEvent, PlayerId, RelicId, TileId, UnitId, UnitKind};
+use crate::{GameEvent, PlayerId, RelicId, TileId, UnitKind};
 
 /// Build a fresh, fully-generated game state from a scenario and seed.
 ///
@@ -351,7 +351,7 @@ fn init_players_and_starting_units(state: &mut GameState, start_oases: &[TileId]
 fn spawn_unit(state: &mut GameState, player: PlayerId, kind: UnitKind, preferred: TileId) {
     let tile = choose_unit_tile(state, preferred);
     let def = kind.def();
-    let id = UnitId(state.units.len() as u32);
+    let id = state.alloc_unit_id();
     state.units.push(Unit {
         id,
         owner: player,
@@ -521,6 +521,29 @@ mod tests {
         // Relic tiles match.
         for (ra, rb) in a.relics.iter().zip(b.relics.iter()) {
             assert_eq!(ra.tile, rb.tile);
+        }
+    }
+
+    #[test]
+    fn starting_units_do_not_collide_with_later_allocations() {
+        // Regression test: `spawn_unit` used to assign starting-unit ids via
+        // `state.units.len()` directly instead of `alloc_unit_id()`, leaving
+        // `next_unit_id` at its default of 0 — so the first real
+        // `alloc_unit_id()` call after map generation (e.g. training a unit)
+        // would reissue an id already held by a starting unit.
+        let mut state = new_game(&ScenarioConfig::mvp_preset(), 42);
+        let starting_ids: std::collections::HashSet<_> = state.units.iter().map(|u| u.id).collect();
+        assert_eq!(
+            starting_ids.len(),
+            state.units.len(),
+            "starting units already share an id with each other"
+        );
+        for _ in 0..state.units.len() + 3 {
+            let id = state.alloc_unit_id();
+            assert!(
+                !starting_ids.contains(&id),
+                "freshly allocated unit id {id:?} collides with a starting unit"
+            );
         }
     }
 

@@ -186,8 +186,23 @@ impl Renderer {
 
         if is_mouse_button_released(MouseButton::Left) {
             if let Some(press_pos) = self.left_press_pos.take() {
+                // Target `press_pos`, not `mouse_screen`: macroquad's
+                // `mouse_position()` is live state, overwritten by every OS
+                // mouse-move event the instant it arrives, independent of
+                // our frame loop. If a frame takes even a little longer than
+                // usual (e.g. a `state.step()` with extra bookkeeping), the
+                // cursor keeps moving in the real world while this poll is
+                // still pending — by the time we get here, `mouse_screen`
+                // can already reflect a *later* position than the one the
+                // release actually happened at, resolving the click to the
+                // wrong tile. `press_pos` was sampled at press time (which
+                // macroquad wakes the loop for almost immediately), so it
+                // stays anchored to where the click was actually aimed;
+                // `mouse_screen` is still the right choice for the drag-
+                // distance check just below, since that's deliberately
+                // asking "how far has the cursor drifted since the press."
                 if press_pos.distance(mouse_screen) < CLICK_DRAG_THRESHOLD {
-                    self.just_clicked = Some(mouse_screen);
+                    self.just_clicked = Some(press_pos);
                 }
             }
         }
