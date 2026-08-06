@@ -232,11 +232,12 @@ mod tests {
     use super::*;
     use crate::hex::HexCoord;
     use crate::model::{
-        GameState, Player, PlayerColor, PlayerKind, Stockpiles, TerrainType, Unit, UnitAbility,
+        GameState, POP_FOR_SPECIALIZE, Player, PlayerColor, PlayerKind, SPECIALIZE_COST_INFLUENCE,
+        Stockpiles, TerrainType, Unit, UnitAbility,
     };
     use crate::scenario::ScenarioConfig;
     use crate::test_harness;
-    use crate::{PlayerId, UnitKind};
+    use crate::{CitySpecialization, PlayerId, UnitKind};
     use fxhash::FxHashSet;
     use std::collections::VecDeque;
 
@@ -732,5 +733,208 @@ mod tests {
         let sit = s.assess(pid);
         let candidates = s.candidates_build(pid, &sit);
         assert!(candidates.is_empty(), "at unit cap → no build candidates");
+    }
+
+    #[test]
+    fn candidates_specialize_appears_when_eligible() {
+        let mut s = make_game();
+        let pid = PlayerId(0);
+        s.cities[0].population = POP_FOR_SPECIALIZE;
+        let sit = s.assess(pid);
+        let params = params_for(AiPersonality::Expansionist, Difficulty::Normal);
+        let candidates = s.candidates_specialize(pid, &sit, &params);
+        assert!(
+            candidates.iter().any(|c| matches!(
+                c.cmd,
+                Command::Specialize {
+                    spec: CitySpecialization::Fortress,
+                    ..
+                }
+            )),
+            "eligible city should generate a Fortress specialize candidate"
+        );
+    }
+
+    #[test]
+    fn candidates_specialize_absent_population_insufficient() {
+        let s = make_game();
+        let pid = PlayerId(0);
+        // make_game()'s default population (2) is below POP_FOR_SPECIALIZE (3).
+        assert!(s.cities[0].population < POP_FOR_SPECIALIZE);
+        let sit = s.assess(pid);
+        let params = params_for(AiPersonality::Expansionist, Difficulty::Normal);
+        let candidates = s.candidates_specialize(pid, &sit, &params);
+        assert!(
+            candidates.is_empty(),
+            "population below threshold → no specialize candidates"
+        );
+    }
+
+    #[test]
+    fn candidates_specialize_absent_influence_insufficient() {
+        let mut s = make_game();
+        let pid = PlayerId(0);
+        s.cities[0].population = POP_FOR_SPECIALIZE;
+        s.players[0].resources.influence = SPECIALIZE_COST_INFLUENCE - 1;
+        let sit = s.assess(pid);
+        let params = params_for(AiPersonality::Expansionist, Difficulty::Normal);
+        let candidates = s.candidates_specialize(pid, &sit, &params);
+        assert!(
+            candidates.is_empty(),
+            "insufficient influence → no specialize candidates"
+        );
+    }
+
+    #[test]
+    fn candidates_specialize_absent_already_specialized() {
+        let mut s = make_game();
+        let pid = PlayerId(0);
+        s.cities[0].population = POP_FOR_SPECIALIZE;
+        s.cities[0].specialization = Some(CitySpecialization::TradeHub);
+        let sit = s.assess(pid);
+        let params = params_for(AiPersonality::Expansionist, Difficulty::Normal);
+        let candidates = s.candidates_specialize(pid, &sit, &params);
+        assert!(
+            candidates.is_empty(),
+            "already-specialized city → no specialize candidates"
+        );
+    }
+
+    #[test]
+    fn candidates_specialize_raider_personality_score_boosted() {
+        let mut s = make_game();
+        s.players[0].kind = PlayerKind::Ai {
+            personality: AiPersonality::Raider,
+            difficulty: Difficulty::Normal,
+        };
+        let pid = PlayerId(0);
+        s.cities[0].population = POP_FOR_SPECIALIZE;
+        let sit = s.assess(pid);
+        let params = params_for(AiPersonality::Raider, Difficulty::Normal);
+        let candidates = s.candidates_specialize(pid, &sit, &params);
+        let expected = 8.0 * (params.raid_weight / params.build_weight);
+        assert!(
+            candidates.iter().any(|c| (c.score - expected).abs() < 0.01),
+            "Raider personality's score should be pre-scaled to raid_weight, got {:?}",
+            candidates.iter().map(|c| c.score).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn candidates_build_prioritizes_raider_once_fortress_exists() {
+        let mut s = make_game();
+        let pid = PlayerId(0);
+        s.cities[0].specialization = Some(CitySpecialization::Fortress);
+        let sit = s.assess(pid);
+        let candidates = s.candidates_build(pid, &sit);
+        assert!(
+            candidates.iter().any(|c| matches!(
+                c.cmd,
+                Command::TrainUnit {
+                    kind: UnitKind::Raider,
+                    ..
+                }
+            )),
+            "Fortress city with no Raider owned should train one"
+        );
+        assert!(
+            !candidates.iter().any(|c| matches!(
+                c.cmd,
+                Command::TrainUnit {
+                    kind: UnitKind::CaravanGuard | UnitKind::Scout,
+                    ..
+                }
+            )),
+            "Fortress city should train the Raider first, not a Guard/Scout"
+        );
+    }
+
+    #[test]
+    fn ai_plan_raider_personality_emits_specialize_when_eligible() {
+        let mut s = make_game();
+        s.players[0].kind = PlayerKind::Ai {
+            personality: AiPersonality::Raider,
+            difficulty: Difficulty::Normal,
+        };
+        let pid = PlayerId(0);
+        s.cities[0].population = POP_FOR_SPECIALIZE;
+        let commands = s.ai_plan(pid, Difficulty::Normal);
+        assert!(
+            commands.iter().any(|c| matches!(
+                c,
+                Command::Specialize {
+                    spec: CitySpecialization::Fortress,
+                    ..
+                }
+            )),
+            "Raider AI with an eligible city should specialize into a Fortress: {commands:?}"
+        );
+    }
+
+    #[test]
+    fn ai_plan_raider_personality_trains_raider_once_fortress() {
+        let mut s = make_game();
+        s.players[0].kind = PlayerKind::Ai {
+            personality: AiPersonality::Raider,
+            difficulty: Difficulty::Normal,
+        };
+        let pid = PlayerId(0);
+        s.cities[0].specialization = Some(CitySpecialization::Fortress);
+        let commands = s.ai_plan(pid, Difficulty::Normal);
+        assert!(
+            commands.iter().any(|c| matches!(
+                c,
+                Command::TrainUnit {
+                    kind: UnitKind::Raider,
+                    ..
+                }
+            )),
+            "Raider AI with a Fortress and no Raider yet should train one: {commands:?}"
+        );
+    }
+
+    #[test]
+    fn ai_plan_raider_personality_raids_with_idle_raider_and_visible_enemy() {
+        let mut s = make_game();
+        s.players[0].kind = PlayerKind::Ai {
+            personality: AiPersonality::Raider,
+            difficulty: Difficulty::Normal,
+        };
+        let pid = PlayerId(0);
+
+        // An idle Raider next to a visible enemy city.
+        let raider_coord = crate::hex::HexCoord { q: 1, r: 0 };
+        test_harness::mark_terrain(&mut s, raider_coord, TerrainType::Dunes);
+        let raider_tile = s.tile_index[&raider_coord];
+        test_harness::create_unit(&mut s, pid, UnitKind::Raider, raider_tile);
+
+        let pid_enemy = s.alloc_player_id();
+        s.players.push(crate::Player {
+            id: pid_enemy,
+            kind: PlayerKind::Human,
+            color: crate::PlayerColor::Crimson,
+            resources: Stockpiles::default(),
+            discovered: FxHashSet::default(),
+            defeated: false,
+        });
+        let enemy_coord = crate::hex::HexCoord { q: 2, r: 0 }; // adjacent to raider_coord
+        test_harness::mark_terrain(&mut s, enemy_coord, TerrainType::Dunes);
+        let enemy_city_id = test_harness::create_city(&mut s, pid_enemy, enemy_coord, 1);
+        // Unlike `candidates_expand_ignores_hidden_enemy_city`, reveal this
+        // one — the AI must actually be able to see its raid target.
+        let enemy_tile = s.tile_index[&enemy_coord];
+        s.reveal(pid, enemy_tile, 0);
+        assert!(
+            s.is_city_visible(pid, enemy_city_id),
+            "sanity: enemy city must be visible for this test"
+        );
+
+        let commands = s.ai_plan(pid, Difficulty::Normal);
+        assert!(
+            commands
+                .iter()
+                .any(|c| matches!(c, Command::RaidCity { .. } | Command::RaidRoute { .. })),
+            "Raider AI with an idle Raider next to a visible enemy city should raid: {commands:?}"
+        );
     }
 }

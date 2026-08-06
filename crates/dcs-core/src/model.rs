@@ -3163,12 +3163,25 @@ impl GameState {
             .filter(|u| u.owner == player && u.kind == UnitKind::CaravanGuard)
             .count() as f32;
 
+        // A Fortress city with no Raider yet should train one before
+        // anything else — it's the only unit `candidates_raid` can act
+        // with, and a Fortress otherwise sits idle as far as the AI's own
+        // raiding behavior is concerned.
+        let raiders_owned = self
+            .units
+            .iter()
+            .filter(|u| u.owner == player && u.kind == UnitKind::Raider)
+            .count();
+
         // Try each city for training.
         for &cid in &sit.own_cities {
             let city = &self.cities[cid.0 as usize];
+            let is_fortress = city.specialization == Some(CitySpecialization::Fortress);
 
             // Determine what to train.
-            let kind_to_train = if current_guards < guards_needed {
+            let kind_to_train = if is_fortress && raiders_owned == 0 {
+                UnitKind::Raider
+            } else if current_guards < guards_needed {
                 UnitKind::CaravanGuard
             } else if unit_deficit > 0.0 {
                 UnitKind::Scout
@@ -3179,7 +3192,7 @@ impl GameState {
 
             let cost = UNIT_TRAIN_COST[kind_to_train.index()];
             // Apply Fortress discount if applicable.
-            let actual_cost = if city.specialization == Some(CitySpecialization::Fortress) {
+            let actual_cost = if is_fortress {
                 (cost as f32 * FORTRESS_TRAIN_DISCOUNT) as u32
             } else {
                 cost
@@ -3189,11 +3202,11 @@ impl GameState {
                 continue;
             }
 
-            let score = if kind_to_train == UnitKind::CaravanGuard {
+            let score = match kind_to_train {
                 // Higher score if we have exposed routes needing guards.
-                guards_needed * 2.0
-            } else {
-                unit_deficit
+                UnitKind::CaravanGuard => guards_needed * 2.0,
+                UnitKind::Scout => unit_deficit,
+                UnitKind::Raider => 3.0,
             };
 
             candidates.push(ScoredAction {
@@ -3201,6 +3214,72 @@ impl GameState {
                 cmd: Command::TrainUnit {
                     city: cid,
                     kind: kind_to_train,
+                },
+                category: CAT_BUILD,
+            });
+        }
+
+        candidates
+    }
+
+    /// Generate `Specialize { spec: Fortress }` commands for eligible cities.
+    ///
+    /// Fortress-only: the sole specialization with a mechanical payoff wired
+    /// into the rest of the AI today (unlocks `TrainUnit{Raider}` in
+    /// `candidates_build` above; grants city defense + zone of control).
+    /// TradeHub/WellFort/ScholarOutpost have no AI consumer yet — out of
+    /// scope here.
+    ///
+    /// Tagged `CAT_BUILD` like `candidates_build`, but its raw score is
+    /// pre-scaled so that after `prioritize` applies `build_weight`
+    /// uniformly, the *effective* score equals `BASE_SCORE * raid_weight`
+    /// whenever the player has no Raider yet and rates raiding above
+    /// building. Without this, the Raider personality's lowest-of-all
+    /// `build_weight` would permanently starve the one action that unlocks
+    /// its raiding behavior.
+    pub(crate) fn candidates_specialize(
+        &self,
+        player: PlayerId,
+        sit: &Situation,
+        params: &AiParams,
+    ) -> Vec<ScoredAction> {
+        let mut candidates = Vec::new();
+        let player_data = &self.players[player.0 as usize];
+
+        if player_data.resources.influence < SPECIALIZE_COST_INFLUENCE {
+            return candidates;
+        }
+
+        let has_raider = self
+            .units
+            .iter()
+            .any(|u| u.owner == player && u.kind == UnitKind::Raider);
+
+        const BASE_SCORE: f32 = 8.0;
+        let target_weight = if !has_raider && params.raid_weight > params.build_weight {
+            params.raid_weight
+        } else {
+            params.build_weight
+        };
+        let score = if params.build_weight > 0.0 {
+            BASE_SCORE * (target_weight / params.build_weight)
+        } else {
+            0.0
+        };
+        if score <= 0.0 {
+            return candidates;
+        }
+
+        for &cid in &sit.own_cities {
+            let city = &self.cities[cid.0 as usize];
+            if city.population < POP_FOR_SPECIALIZE || city.specialization.is_some() {
+                continue;
+            }
+            candidates.push(ScoredAction {
+                score,
+                cmd: Command::Specialize {
+                    city: cid,
+                    spec: CitySpecialization::Fortress,
                 },
                 category: CAT_BUILD,
             });
@@ -3504,6 +3583,7 @@ impl GameState {
         // Generate candidates from all categories.
         all.extend(self.candidates_expand(player, sit));
         all.extend(self.candidates_build(player, sit));
+        all.extend(self.candidates_specialize(player, sit, params));
         all.extend(self.candidates_connect(player, sit));
         all.extend(self.candidates_defend(player, sit));
         all.extend(self.candidates_raid(player, sit, params));
