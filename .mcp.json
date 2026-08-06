@@ -2,9 +2,11 @@
   "mcpServers": {
     "playwright": {
       "type": "stdio",
-      "command": "npx",
+      "command": "mise",
       "args": [
-        "@playwright/mcp@latest",
+        "exec",
+        "--",
+        "playwright-mcp",
         "--browser",
         "firefox"
       ],
