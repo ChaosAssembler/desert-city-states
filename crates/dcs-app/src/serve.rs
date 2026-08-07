@@ -15,7 +15,7 @@ use dcs_core::hex::HexCoord;
 use dcs_core::model::{BUILD_COST, SPECIALIZE_COST_INFLUENCE, UNIT_TRAIN_COST};
 use dcs_core::{
     BuildingKind, BuildingKindExt, CityId, CitySpecialization, Command, GameEvent, GameState,
-    PlayerId, RouteId, ScenarioConfig, TileId, UnitId, UnitKind, UnitKindExt,
+    PlayerId, PlayerKind, RouteId, ScenarioConfig, TileId, UnitId, UnitKind, UnitKindExt,
 };
 use std::io::{self, BufRead, Write};
 use std::path::Path;
@@ -35,6 +35,16 @@ struct ActError {
 // ---------------------------------------------------------------------------
 // Server state
 // ---------------------------------------------------------------------------
+
+/// Safety backstop for the AI-turn-processing loop in
+/// [`ServeState::handle_act`]. The real bound is `player_count - 1` (at most
+/// 3 — `ScenarioConfig` enforces `2..=4` players, exactly one human): once
+/// every AI has acted, `step`'s `advance_actor` cycles `current_actor` back
+/// to the human. This is set far above that purely so a defect in actor-
+/// advance/defeated-player logic fails fast in a test instead of hanging —
+/// not derived from `turn_limit`, which bounds rounds across a whole game,
+/// not AI steps within one `act` call.
+const MAX_AI_STEPS_PER_ACT: usize = 50;
 
 /// State maintained across requests in a serve session.
 pub struct ServeState {
@@ -469,6 +479,29 @@ impl ServeState {
             }
         };
 
+        // Once a Victory has occurred, the game is frozen (spec §31.8):
+        // reject further `act` calls with a clear error instead of the
+        // confusing ERR_NOT_YOUR_TURN a stuck current_actor would otherwise
+        // produce (see advance_turn's early-return-on-victory, which leaves
+        // current_actor wherever it was rather than resetting it to the
+        // human). observe/save_game are unaffected — this guard only gates
+        // act.
+        if let Some(GameEvent::Victory { kind, winner }) = game
+            .log
+            .iter()
+            .find(|e| matches!(e, GameEvent::Victory { .. }))
+        {
+            return Response::error(
+                ERR_GAME_OVER,
+                "the game is over",
+                Some(format!(
+                    "The game is over. Winner: player {} ({kind}). Start a new game to play again.",
+                    winner.0
+                )),
+                "act",
+            );
+        }
+
         // Validate player is claimed.
         let claimed_player = match self.player_id {
             Some(pid) => pid,
@@ -519,21 +552,50 @@ impl ServeState {
         // Convert wire commands to core commands.
         let (core_commands, act_errors) = convert_commands(&commands, game, acting_player);
 
-        // Execute the supported commands through the turn engine.
+        // Execute the acting player's own commands, then automatically
+        // process every remaining AI player's turn for the rest of the
+        // round (spec §20 point 5, §31.9), stopping immediately if a
+        // Victory occurs at any point.
         let mut output_events = Vec::new();
         let mut victory_info = None;
 
         if !core_commands.is_empty() {
             let events = game.step(&core_commands);
-            for event in &events {
-                // Extract Victory info for the top-level field.
-                if let GameEvent::Victory { kind, winner } = event {
-                    victory_info = Some(VictoryInfo {
-                        kind: kind.to_string(),
-                        winner: winner.0,
-                    });
+            record_events(&events, &mut output_events, &mut victory_info);
+        }
+
+        // `current_actor`'s kind (not a hardcoded player id) is the correct
+        // loop condition: the engine guarantees exactly one human player,
+        // always seat 0 (ScenarioConfig::validate, map::init_players_and_
+        // starting_units), so "current actor is Human" and "current actor
+        // is player 0" are equivalent today — but keying off `kind` matches
+        // the reference implementation in orchestrate.rs::step_turn instead
+        // of hardcoding the assumption a second place.
+        if victory_info.is_none() {
+            let mut ai_steps = 0usize;
+            loop {
+                let actor = game.current_actor;
+                let difficulty = match game.players[actor.0 as usize].kind {
+                    PlayerKind::Human => break,
+                    PlayerKind::Ai { difficulty, .. } => difficulty,
+                };
+
+                ai_steps += 1;
+                if ai_steps > MAX_AI_STEPS_PER_ACT {
+                    // Unreachable under the engine's single-human invariant
+                    // (see MAX_AI_STEPS_PER_ACT's doc comment) — a defensive
+                    // backstop, not the primary termination condition.
+                    break;
                 }
-                output_events.push(game_event_to_output(event));
+
+                let mut ai_commands = game.ai_plan(actor, difficulty);
+                ai_commands.push(Command::EndTurn);
+                let events = game.step(&ai_commands);
+                record_events(&events, &mut output_events, &mut victory_info);
+
+                if victory_info.is_some() {
+                    break;
+                }
             }
         }
 
@@ -1047,6 +1109,27 @@ fn convert_commands(
     (core_commands, errors)
 }
 
+/// Converts `events` to wire format and appends them to `output_events`,
+/// recording the first `Victory` seen (if any) into `victory_info`. Shared
+/// by [`ServeState::handle_act`]'s single step of the acting player's own
+/// commands and its loop over each subsequent AI turn, so both contribute
+/// to one flat response.
+fn record_events(
+    events: &[GameEvent],
+    output_events: &mut Vec<EventOutput>,
+    victory_info: &mut Option<VictoryInfo>,
+) {
+    for event in events {
+        if let GameEvent::Victory { kind, winner } = event {
+            *victory_info = Some(VictoryInfo {
+                kind: kind.to_string(),
+                winner: winner.0,
+            });
+        }
+        output_events.push(game_event_to_output(event));
+    }
+}
+
 /// Convert a core [`GameEvent`] into a wire-format [`EventOutput`].
 ///
 /// Uses snake_case event type names and flattens the event fields into
@@ -1478,11 +1561,67 @@ mod tests {
             commands: vec![CommandInput::EndTurn],
         });
         match resp {
-            Response::Events { turn, errors, .. } => {
+            Response::Events {
+                turn,
+                events,
+                victory,
+                errors,
+            } => {
                 assert!(turn >= 1);
                 assert!(errors.is_empty());
+                assert!(victory.is_none());
+
+                // Control must have cycled through both AI players
+                // (mvp_preset: player 0 human, players 1-2 AI) and back to
+                // the human before act returns.
+                let game = state.game.as_ref().unwrap();
+                assert_eq!(game.current_actor, PlayerId(0));
+                assert!(matches!(game.players[0].kind, PlayerKind::Human));
+
+                // Every step() call unconditionally emits an Income event
+                // for whichever actor is current — an income event for a
+                // non-zero player id is a reliable, content-agnostic signal
+                // that at least one AI turn actually ran, robust even if
+                // ai_plan legitimately emits zero commands for a cityless
+                // AI at turn 1.
+                let ai_income_seen = events.iter().any(|e| {
+                    e.event_type == "income"
+                        && e.data.get("player").and_then(|p| p.as_u64()) != Some(0)
+                });
+                assert!(
+                    ai_income_seen,
+                    "expected an income event for an AI player, got: {events:?}"
+                );
             }
             other => panic!("expected Events, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_act_after_victory_returns_game_over() {
+        let mut state = state_with_claimed_player();
+        // Inject a synthetic Victory directly into the durable log — the
+        // same field handle_observe's is_game_over already reads. Driving a
+        // real victory would need running out turn_limit or a bespoke
+        // low-threshold scenario; this guard only cares that *a* Victory is
+        // present in the log, so that's disproportionate setup for what it
+        // tests.
+        state.game.as_mut().unwrap().log.push(GameEvent::Victory {
+            kind: VictoryKind::OasisDominance,
+            winner: PlayerId(0),
+        });
+
+        let resp = state.dispatch(Request::Act {
+            player_id: None,
+            commands: vec![CommandInput::EndTurn],
+        });
+
+        match resp {
+            Response::Error { code, hint, .. } => {
+                assert_eq!(code, ERR_GAME_OVER);
+                assert!(hint.is_some());
+            }
+            other => panic!("expected Error(game_over), got {other:?}"),
         }
     }
 
